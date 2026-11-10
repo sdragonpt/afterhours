@@ -166,7 +166,7 @@ onMounted(boot)
 .tab:active { transform: scale(.9); }
 .tab.on { color: var(--paper); }
 .tab.on span { color: var(--lime); }
-.fab { justify-self: center; display: grid; place-items: center; width: 58px; height: 58px; margin-top: -26px; border: 2px solid #000; border-radius: 999px; background: var(--lime); color: var(--on-color); box-shadow: 0 0 0 5px var(--ink), 4px 6px 0 5px #000; transition: transform var(--base) var(--ease-spring); }
+.fab { justify-self: center; display: grid; place-items: center; width: 58px; height: 58px; margin-top: -26px; border: 2px solid #000; border-radius: 999px; background: var(--lime); color: var(--on-color); transition: transform var(--base) var(--ease-spring); }
 .fab:hover { transform: rotate(90deg); }
 .fab:active { transform: scale(.88) rotate(90deg); }
 
