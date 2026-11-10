@@ -32,9 +32,10 @@ const goingIds = computed<string[]>(() => (nextPlan.value?.rsvps || []).filter((
 const myDebt = computed(() => ledger.myTransfers.value)
 
 // ── load ────────────────────────────────────────────────
+const gamingData = useGamingData()
 function load() {
   if (!community.value || !me.value) return
-  feed.refresh(); plans.refresh(); ledger.load()
+  feed.refresh(); plans.refresh(); ledger.load(); gamingData.refresh()
 }
 
 async function goToPlan(e: MouseEvent) {
@@ -194,6 +195,9 @@ onMounted(load)
       </div>
       <p v-if="!onVibe.length" class="vibe-hint muted">Ninguém disse nada ainda. Começa tu: diz à malta se bora sair ou jogar.</p>
     </section>
+
+    <!-- live / starting-soon lobbies -->
+    <LiveLobbies />
 
     <!-- next plan poster -->
     <NuxtLink v-if="nextPlan" to="/plans" class="poster sticker fill-coral">
