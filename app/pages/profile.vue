@@ -50,6 +50,8 @@ async function signOut() { await supabase.auth.signOut(); navigateTo('/login') }
       <button class="btn btn-primary btn-block" :disabled="saving || !name.trim()" @click="save">{{ saving ? 'A guardar…' : 'Guardar' }}</button>
     </section>
 
+    <NotifyCard />
+
     <section class="panel p-4">
       <p class="kicker m-0 mb-3">A tua vibe agora</p>
       <VibePicker />

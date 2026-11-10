@@ -215,6 +215,8 @@ onMounted(load)
       <Plus :size="20" />
     </NuxtLink>
 
+    <NotifyCard compact />
+
     <!-- money nudge -->
     <NuxtLink to="/tab" class="money" :class="ledger.myBalance.value < -0.004 ? 'owe' : ledger.myBalance.value > 0.004 ? 'get' : 'clean'">
       <span class="kicker">The Tab</span>

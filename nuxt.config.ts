@@ -23,6 +23,8 @@ export default defineNuxtConfig({
     public: {
       mediaUrl: process.env.MEDIA_URL || '',
       calUrl: process.env.CAL_URL || 'https://afterhours-cal.sergionunoribeiro.workers.dev',
+      // public half of the VAPID pair (private key lives only in Vercel env)
+      vapidPublicKey: process.env.VAPID_PUBLIC_KEY || 'BHgr8VJsmDRU-PAM76rasSuL8KlxjuzvStKLhcD-krzVgTclG3HXmaUEmOm5S0u79yGMKHx0XPR-OaHU57gjYDM',
     },
   },
   // emit /tab.html (not /tab/index.html) so Netlify serves /tab without a 301 to /tab/
