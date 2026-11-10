@@ -17,6 +17,7 @@ async function join() {
   const { data, error } = await supabase.rpc('join_group_by_invite', { p_token: code })
   busy.value = false
   if (error) { status.value = error.message.includes('invalid input syntax') ? 'Código inválido.' : error.message === 'Invalid or expired invite' ? 'Este convite expirou ou já foi usado. Pede um novo.' : error.message; return }
+  clearPendingInvite()
   community.value = data as string
   await crew.loadGroups()
   await crew.loadMembers(true)

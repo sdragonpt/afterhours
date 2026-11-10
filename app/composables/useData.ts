@@ -14,9 +14,13 @@ export function useResource<T>(key: string, fetcher: (community: string) => Prom
   })
   const loaded = computed(() => !!community.value && store.value[community.value] !== undefined)
 
-  async function refresh() {
+  // If a refresh is requested while one is running (e.g. right after saving something
+  // during the background prefetch), run once more afterwards so the UI never shows stale data.
+  const again = useState<Record<string, boolean>>(`res:${key}:again`, () => ({}))
+  async function refresh(): Promise<void> {
     const c = community.value
-    if (!c || inflight.value[c]) return
+    if (!c) return
+    if (inflight.value[c]) { again.value = { ...again.value, [c]: true }; return }
     inflight.value = { ...inflight.value, [c]: true }
     try {
       const v = await fetcher(c)
@@ -25,6 +29,7 @@ export function useResource<T>(key: string, fetcher: (community: string) => Prom
       useToast().error(e?.message || 'Falha a carregar')
     } finally {
       inflight.value = { ...inflight.value, [c]: false }
+      if (again.value[c]) { again.value = { ...again.value, [c]: false }; await refresh() }
     }
   }
   return { data, loaded, refresh }
@@ -35,6 +40,7 @@ const one = <T>(x: T | T[] | null | undefined): T | null => (Array.isArray(x) ? 
 // ── feed ────────────────────────────────────────────────
 export function useFeed() {
   const supabase = useSupabaseClient()
+  const media = useMedia()
   return useResource('feed', async (c) => {
     const { data, error } = await supabase.from('posts')
       .select('id,group_id,author_id,body,category,created_at,post_reactions(user_id,reaction),post_comments(count),post_media(storage_path,media_type,game_title),post_polls(options,poll_votes(user_id,option_index))')
@@ -55,8 +61,8 @@ export function useFeed() {
     const urls: Record<string, string> = {}
     const paths = posts.filter(p => p.storage_path).map(p => p.storage_path as string)
     if (paths.length) {
-      const { data: signed } = await supabase.storage.from('community-media').createSignedUrls(paths, 3600)
-      for (const p of posts) { const s = signed?.find(x => x.path === p.storage_path); if (s?.signedUrl) urls[p.id] = s.signedUrl }
+      const signed = await media.sign(paths)
+      for (const p of posts) { const u = p.storage_path ? signed[p.storage_path] : undefined; if (u) urls[p.id] = u }
     }
     return { posts, urls }
   }, () => ({ posts: [] as any[], urls: {} as Record<string, string> }))
@@ -77,12 +83,13 @@ export function usePlans() {
 // ── gaming ──────────────────────────────────────────────
 export function useGamingData() {
   const supabase = useSupabaseClient()
+  const storage = useMedia()
   return useResource('gaming', async (c) => {
     const [calls, media] = await Promise.all([
       supabase.from('game_calls').select('id,created_by,game,starts_at,slots,game_call_players(user_id,joined_at)')
         .eq('group_id', c).gte('starts_at', new Date(Date.now() - 2 * 3600000).toISOString()).order('starts_at'),
-      supabase.from('post_media').select('id,post_id,storage_path,game_title,created_at,posts(author_id,body,post_reactions(count))')
-        .eq('group_id', c).eq('media_type', 'video').order('created_at', { ascending: false }).limit(40),
+      supabase.from('post_media').select('id,post_id,storage_path,media_type,game_title,created_at,posts(author_id,body,category,post_reactions(count))')
+        .eq('group_id', c).in('media_type', ['video', 'image']).order('created_at', { ascending: false }).limit(40),
     ])
     if (calls.error) throw calls.error
     if (media.error) throw media.error
@@ -92,12 +99,12 @@ export function useGamingData() {
     }))
     const clips = (media.data || []).map((m: any) => {
       const p = one(m.posts) as any
-      return { ...m, author_id: p?.author_id, body: p?.body, score: one(p?.post_reactions as any[])?.count ?? 0 }
-    }).filter((c: any) => c.author_id)
+      return { ...m, author_id: p?.author_id, body: p?.body, category: p?.category, score: one(p?.post_reactions as any[])?.count ?? 0 }
+    }).filter((c: any) => c.author_id && (c.media_type === 'video' || c.category === 'Gaming')) // clips + gaming screenshots
     const urls: Record<string, string> = {}
     if (clips.length) {
-      const { data: signed } = await supabase.storage.from('community-media').createSignedUrls(clips.map((c: any) => c.storage_path), 3600)
-      for (const s of signed || []) { const c = clips.find((x: any) => x.storage_path === s.path); if (c && s.signedUrl) urls[c.id] = s.signedUrl }
+      const signed = await storage.sign(clips.map((c: any) => c.storage_path))
+      for (const c of clips) { const u = signed[c.storage_path]; if (u) urls[c.id] = u }
     }
     return { lobbies, clips, urls }
   }, () => ({ lobbies: [] as any[], clips: [] as any[], urls: {} as Record<string, string> }))

@@ -8,6 +8,7 @@ const supabase = useSupabaseClient()
 const me = useMe()
 const crew = useCrew()
 const toast = useToast()
+const media = useMedia()
 const popped = ref<string | null>(null)
 
 const counts = computed(() => {
@@ -58,6 +59,7 @@ async function remove() {
   if (!confirm('Apagar este post?')) return
   const { error } = await supabase.from('posts').delete().eq('id', props.post.id)
   if (error) return toast.error(error.message)
+  if (props.post.storage_path) media.remove(props.post.storage_path)
   emit('deleted', props.post.id)
 }
 function share() {

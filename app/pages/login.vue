@@ -16,7 +16,7 @@ const redirectTo = computed(() => {
   return typeof r === 'string' && r.startsWith('/') && !r.startsWith('//') ? r : '/'
 })
 const isInvite = computed(() => redirectTo.value.startsWith('/join'))
-if (isInvite.value) mode.value = 'signup'
+if (isInvite.value) { mode.value = 'signup'; if (import.meta.client) rememberInvite(redirectTo.value) }
 
 watchEffect(() => { if (user.value) navigateTo(redirectTo.value, { replace: true }) })
 
@@ -35,7 +35,8 @@ async function submit() {
       const { data, error } = await supabase.auth.signUp({
         email: email.value,
         password: password.value,
-        options: { emailRedirectTo: `${window.location.origin}${redirectTo.value}` },
+        // confirmation lands on /confirmed (always allowed); the invite is remembered on this device
+        options: { emailRedirectTo: `${window.location.origin}/confirmed` },
       })
       if (error) throw error
       if (!data.session) { sent.value = 'signup'; return }

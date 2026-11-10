@@ -49,14 +49,21 @@ async function remind() {
 // ── new expense ─────────────────────────────────────────
 const adding = ref(false)
 const desc = ref('')
-const amount = ref<number | null>(null)
+// text field (not type=number): the PT iPhone keyboard types a comma, which Safari's
+// number inputs reject → the value used to come back empty.
+const amountText = ref('')
+const amount = computed<number | null>(() => {
+  const v = Number(amountText.value.replace(/\s/g, '').replace(',', '.'))
+  return Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : null
+})
+watch(amountText, (v) => { const clean = v.replace(/[^0-9.,]/g, '').replace(/([.,].*)[.,]/, '$1'); if (clean !== v) amountText.value = clean })
 const paidBy = ref('')
 const who = ref<string[]>([])
 const saving = ref(false)
 const presets = ['Jantar', 'Finos', 'Gasolina', 'Uber', 'Supermercado', 'Bilhetes']
 const each = computed(() => amount.value && who.value.length ? amount.value / who.value.length : 0)
 function openAdd() {
-  desc.value = ''; amount.value = null; paidBy.value = myId.value
+  desc.value = ''; amountText.value = ''; paidBy.value = myId.value
   who.value = crew.members.value.map(m => m.user_id); adding.value = true
 }
 function toggleWho(id: string) { who.value = who.value.includes(id) ? who.value.filter(x => x !== id) : [...who.value, id] }
@@ -152,7 +159,7 @@ onMounted(() => ledger.load())
     <Sheet :open="adding" kicker="The Tab" title="Nova despesa" @close="adding = false">
       <div class="flex flex-col gap-5">
         <div class="amount-wrap">
-          <input v-model.number="amount" class="amount" :style="{ width: (String(amount ?? 0).length + .4) + 'ch' }" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0" aria-label="Valor">
+          <input v-model="amountText" class="amount" :style="{ width: (Math.max(1, amountText.length) + .4) + 'ch' }" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Valor">
           <span class="amount-eur display">€</span>
         </div>
         <div>

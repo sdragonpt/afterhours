@@ -65,9 +65,23 @@ function openComposer(mode: Mode) {
 }
 function pickFile(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0] || null
-  if (f && f.size > 100 * 1024 * 1024) { toast.error('Máximo 100 MB.'); return }
+  // big clips are fine: they get compressed before upload. Photos stay under the cap.
+  if (f && !f.type.startsWith('video/') && f.size > MAX_UPLOAD_BYTES) { toast.error('Fotos até 100 MB.'); return }
+  if (f && f.size > 2 * 1024 * 1024 * 1024) { toast.error('Clip demasiado grande (máx. 2 GB antes de comprimir).'); return }
   file.value = f
   preview.value = f ? URL.createObjectURL(f) : ''
+}
+
+const media = useMedia()
+const stage = ref<null | 'compress' | 'upload' | 'save'>(null)
+const progress = ref(0)
+const savedNote = ref('')
+
+/** compress → upload (shared with comments) → storage_path */
+async function sendFile(f: File) {
+  const r = await media.send(f, community.value!, me.value!.id, (s, p) => { stage.value = s; progress.value = p })
+  savedNote.value = r.note
+  return r
 }
 const canPost = computed(() => {
   if (composer.value === 'poll') return body.value.trim() && options.value.filter(o => o.trim()).length >= 2
@@ -77,22 +91,29 @@ const canPost = computed(() => {
 
 async function publish(e: MouseEvent) {
   if (!community.value || !me.value || !canPost.value) return
-  posting.value = true
+  posting.value = true; savedNote.value = ''
+  // 1) media first — if it fails, no empty post is created
+  let sent: { path: string; file: File } | null = null
+  if (file.value) {
+    try { sent = await sendFile(file.value) } catch (err: any) {
+      posting.value = false; stage.value = null
+      return toast.error(err?.message || 'Falha no envio')
+    }
+  }
+  stage.value = 'save'
   const text = body.value.trim() || (composer.value === 'clip' ? 'Olhem para isto 👀' : '📸')
   const { data: post, error } = await supabase.from('posts').insert({ group_id: community.value, author_id: me.value.id, body: text, category: category.value }).select('id').single()
-  if (error) { posting.value = false; return toast.error(error.message) }
+  if (error) { posting.value = false; stage.value = null; if (sent) media.remove(sent.path); return toast.error(error.message) }
   if (composer.value === 'poll') {
     const { error: pe } = await supabase.from('post_polls').insert({ post_id: post.id, group_id: community.value, options: options.value.map(o => o.trim()).filter(Boolean) })
     if (pe) toast.error(pe.message)
   }
-  if (file.value) {
-    const f = file.value
-    const path = `${community.value}/${me.value.id}/${crypto.randomUUID()}-${f.name.replace(/[^a-zA-Z0-9._-]/g, '-')}`
-    const { error: ue } = await supabase.storage.from('community-media').upload(path, f, { contentType: f.type })
-    if (ue) toast.error(`O ficheiro não foi enviado: ${ue.message}`)
-    else await supabase.from('post_media').insert({ post_id: post.id, group_id: community.value, storage_path: path, media_type: f.type.startsWith('video/') ? 'video' : 'image', file_name: f.name, file_size: f.size, game_title: gameTitle.value.trim() || null })
+  if (sent) {
+    const f = sent.file
+    const { error: me2 } = await supabase.from('post_media').insert({ post_id: post.id, group_id: community.value, storage_path: sent.path, media_type: f.type.startsWith('video/') ? 'video' : 'image', file_name: f.name, file_size: f.size, game_title: gameTitle.value.trim() || null })
+    if (me2) toast.error(me2.message)
   }
-  posting.value = false
+  posting.value = false; stage.value = null
   const mode = composer.value
   composer.value = null
   celebrate(originFrom(e))
@@ -104,17 +125,40 @@ async function publish(e: MouseEvent) {
 const commentsFor = ref<string | null>(null)
 const commentRows = ref<any[]>([])
 const commentText = ref('')
+const commentPhoto = ref<File | null>(null)
+const commentPhotoPreview = ref('')
+const commentBusy = ref(false)
+const commentUrls = ref<Record<string, string>>({})
+const commentInput = ref<HTMLInputElement | null>(null)
 async function openComments(id: string) {
-  commentsFor.value = id; commentRows.value = []; commentText.value = ''
-  const { data } = await supabase.from('post_comments').select('id,user_id,body,created_at').eq('post_id', id).order('created_at')
+  commentsFor.value = id; commentRows.value = []; commentText.value = ''; clearCommentPhoto()
+  const { data } = await supabase.from('post_comments').select('id,user_id,body,media_path,created_at').eq('post_id', id).order('created_at')
   commentRows.value = data || []
+  const paths = commentRows.value.map(c => c.media_path).filter(Boolean)
+  if (paths.length) commentUrls.value = { ...commentUrls.value, ...(await media.sign(paths)) }
 }
+function pickCommentPhoto(e: Event) {
+  const f = (e.target as HTMLInputElement).files?.[0] || null
+  if (f && !f.type.startsWith('image/')) return toast.error('Nos comentários só fotos.')
+  commentPhoto.value = f
+  commentPhotoPreview.value = f ? URL.createObjectURL(f) : ''
+}
+function clearCommentPhoto() { commentPhoto.value = null; commentPhotoPreview.value = ''; if (commentInput.value) commentInput.value.value = '' }
 async function addComment() {
-  if (!commentsFor.value || !commentText.value.trim() || !me.value) return
-  const row = { post_id: commentsFor.value, group_id: community.value, user_id: me.value.id, body: commentText.value.trim() }
-  commentText.value = ''
-  const { data, error } = await supabase.from('post_comments').insert(row).select('id,user_id,body,created_at').single()
-  if (error) return toast.error(error.message)
+  if (!commentsFor.value || (!commentText.value.trim() && !commentPhoto.value) || !me.value) return
+  commentBusy.value = true
+  let mediaPath: string | null = null
+  if (commentPhoto.value) {
+    try { mediaPath = (await media.send(commentPhoto.value, community.value!, me.value.id)).path }
+    catch (err: any) { commentBusy.value = false; return toast.error(err?.message || 'Falha no envio da foto') }
+  }
+  const row = { post_id: commentsFor.value, group_id: community.value, user_id: me.value.id, body: commentText.value.trim() || '📷', media_path: mediaPath }
+  const preview = commentPhotoPreview.value
+  commentText.value = ''; commentPhoto.value = null; commentPhotoPreview.value = ''
+  const { data, error } = await supabase.from('post_comments').insert(row).select('id,user_id,body,media_path,created_at').single()
+  commentBusy.value = false
+  if (error) { if (mediaPath) media.remove(mediaPath); return toast.error(error.message) }
+  if (mediaPath && preview) commentUrls.value = { ...commentUrls.value, [mediaPath]: preview }
   commentRows.value.push(data)
   const p = posts.value.find(x => x.id === row.post_id); if (p) p.comment_count++
 }
@@ -223,8 +267,8 @@ onMounted(load)
           <div class="flex gap-2 flex-wrap">
             <button v-for="c in (['Random', 'IRL', 'Gaming'] as const)" :key="c" class="chip" :class="{ on: category === c }" @click="category = c">{{ c === 'Random' ? 'Random' : c }}</button>
           </div>
-          <input ref="fileInput" type="file" class="hidden" :accept="composer === 'clip' ? 'video/mp4,video/webm,video/quicktime' : 'image/*,video/mp4,video/webm,video/quicktime'" @change="pickFile">
-          <button v-if="!file" class="drop" @click="fileInput?.click()"><ImagePlus :size="26" /><span>{{ composer === 'clip' ? 'Escolher vídeo' : 'Foto ou vídeo' }}</span><small class="faint">até 100 MB</small></button>
+          <input ref="fileInput" type="file" class="hidden" accept="image/*,video/mp4,video/webm,video/quicktime" @change="pickFile">
+          <button v-if="!file" class="drop" @click="fileInput?.click()"><ImagePlus :size="26" /><span>{{ composer === 'clip' ? 'Vídeo ou screenshot' : 'Foto ou vídeo' }}</span><small class="faint">clips são comprimidos sem perder qualidade</small></button>
           <div v-else class="drop-preview">
             <video v-if="file.type.startsWith('video/')" :src="preview" muted playsinline autoplay loop />
             <img v-else :src="preview" alt="">
@@ -233,6 +277,14 @@ onMounted(load)
           <input v-if="category === 'Gaming'" v-model="gameTitle" class="field" maxlength="60" placeholder="Jogo (ex.: CS2, Zomboid)">
         </template>
 
+        <div v-if="stage" class="upload-progress">
+          <div class="flex justify-between text-sm font-bold">
+            <span>{{ stage === 'compress' ? 'A comprimir sem perder qualidade…' : stage === 'upload' ? 'A enviar…' : 'Quase…' }}</span>
+            <span v-if="stage !== 'save'" class="num">{{ Math.round(progress * 100) }}%</span>
+          </div>
+          <div class="bar"><i :style="{ transform: `scaleX(${stage === 'save' ? 1 : progress})` }" /></div>
+          <small v-if="savedNote" class="t-lime font-bold">{{ savedNote }}</small>
+        </div>
         <button class="btn btn-primary btn-block" :disabled="!canPost || posting" @click="publish">
           <Send :size="17" /> {{ posting ? 'A enviar…' : 'Publicar' }}
         </button>
@@ -243,13 +295,16 @@ onMounted(load)
       <TransitionGroup name="list" tag="div" class="flex flex-col gap-4 relative">
         <div v-for="c in commentRows" :key="c.id" class="flex gap-3">
           <Avatar :name="crew.nameOf(c.user_id)" :color="crew.colorOf(c.user_id)" :size="32" />
-          <div class="min-w-0"><strong class="text-sm">{{ crew.nameOf(c.user_id) }}</strong> <span class="faint text-xs">{{ ago(c.created_at) }}</span><p class="m-0 mt-1">{{ c.body }}</p></div>
+          <div class="min-w-0 flex-1"><strong class="text-sm">{{ crew.nameOf(c.user_id) }}</strong> <span class="faint text-xs">{{ ago(c.created_at) }}</span><p v-if="c.body && !(c.media_path && c.body === '📷')" class="m-0 mt-1">{{ c.body }}</p><img v-if="c.media_path && commentUrls[c.media_path]" :src="commentUrls[c.media_path]" alt="" class="comment-photo" loading="lazy"></div>
         </div>
       </TransitionGroup>
       <p v-if="!commentRows.length" class="muted text-center">Ainda ninguém comentou.</p>
+      <div v-if="commentPhotoPreview" class="comment-attach"><img :src="commentPhotoPreview" alt=""><button class="icon-btn" aria-label="Remover foto" @click="clearCommentPhoto"><X :size="15" /></button></div>
       <form class="flex gap-2 mt-5" @submit.prevent="addComment">
+        <input ref="commentInput" type="file" accept="image/*" class="hidden" @change="pickCommentPhoto">
+        <button type="button" class="icon-btn self-center" aria-label="Juntar foto" @click="commentInput?.click()"><ImagePlus :size="18" /></button>
         <input v-model="commentText" class="field" maxlength="1000" placeholder="Escreve…">
-        <button class="btn btn-primary" :disabled="!commentText.trim()" aria-label="Enviar"><Send :size="17" /></button>
+        <button class="btn btn-primary" :disabled="commentBusy || (!commentText.trim() && !commentPhoto)" aria-label="Enviar"><Send :size="17" /></button>
       </form>
     </Sheet>
 
@@ -302,4 +357,11 @@ onMounted(load)
 .drop-preview { position: relative; overflow: hidden; border: 2px solid #000; border-radius: var(--r-md); background: #000; }
 .drop-preview img, .drop-preview video { display: block; width: 100%; max-height: 280px; object-fit: contain; }
 .drop-preview .icon-btn { position: absolute; top: 8px; right: 8px; }
+.comment-photo { display: block; max-width: 100%; max-height: 320px; margin-top: 8px; border: 2px solid #000; border-radius: 14px; }
+.comment-attach { position: relative; display: inline-block; margin-top: 14px; }
+.comment-attach img { display: block; max-height: 140px; border: 2px solid #000; border-radius: 14px; }
+.comment-attach .icon-btn { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; }
+.upload-progress { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1.5px solid var(--line-strong); border-radius: var(--r-md); background: var(--ink); }
+.upload-progress .bar { height: 8px; overflow: hidden; border-radius: 99px; background: var(--ink-3); }
+.upload-progress .bar i { display: block; height: 100%; background: var(--lime); transform-origin: left; transition: transform 200ms var(--ease-out); }
 </style>

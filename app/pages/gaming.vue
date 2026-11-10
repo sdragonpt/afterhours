@@ -127,7 +127,8 @@ onMounted(load)
     <!-- clip of the week -->
     <section v-if="clipOfWeek" class="cotw">
       <div class="cotw-badge fill-sun"><Trophy :size="16" /> Clip da semana</div>
-      <video :src="urls[clipOfWeek.id]" controls playsinline preload="metadata" />
+      <img v-if="clipOfWeek.media_type === 'image'" :src="urls[clipOfWeek.id]" alt="" class="cotw-img">
+      <video v-else :src="urls[clipOfWeek.id]" controls playsinline preload="metadata" />
       <div class="cotw-info">
         <Avatar :name="crew.nameOf(clipOfWeek.author_id)" :color="crew.colorOf(clipOfWeek.author_id)" :size="36" />
         <div class="min-w-0 flex-1"><strong class="block truncate">{{ clipOfWeek.body }}</strong><small class="muted">{{ crew.nameOf(clipOfWeek.author_id) }} · {{ clipOfWeek.game_title || 'Outros' }} · {{ clipOfWeek.score }} reações</small></div>
@@ -149,7 +150,8 @@ onMounted(load)
       </div>
       <div class="clip-grid stagger">
         <article v-for="c in shownClips" :key="c.id" class="clip">
-          <video :src="urls[c.id]" controls playsinline preload="metadata" />
+          <img v-if="c.media_type === 'image'" :src="urls[c.id]" alt="" loading="lazy" class="clip-img">
+          <video v-else :src="urls[c.id]" controls playsinline preload="metadata" />
           <div class="clip-meta">
             <span class="tag fill-sky">{{ c.game_title || 'Outros' }}</span>
             <strong class="truncate">{{ c.body }}</strong>
@@ -204,12 +206,12 @@ onMounted(load)
 .lobby-empty > span { flex: 1; }
 .cotw { position: relative; overflow: hidden; border: 2px solid #000; border-radius: var(--r-lg); background: var(--ink-2); box-shadow: 6px 6px 0 var(--sun); }
 .cotw-badge { position: absolute; z-index: 2; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 2px solid #000; border-radius: 999px; font-weight: 800; font-size: 13px; transform: rotate(-3deg); }
-.cotw video { display: block; width: 100%; aspect-ratio: 16/9; background: #000; }
+.cotw video, .cotw-img { display: block; width: 100%; aspect-ratio: 16/9; background: #000; object-fit: contain; }
 .cotw-info { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
 .clip-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
 @media (min-width: 560px) { .clip-grid { grid-template-columns: 1fr 1fr; } }
 .clip { overflow: hidden; border: 1.5px solid var(--line); border-radius: var(--r-md); background: var(--ink-2); }
-.clip video { display: block; width: 100%; aspect-ratio: 16/9; background: #000; }
+.clip video, .clip-img { display: block; width: 100%; aspect-ratio: 16/9; background: #000; object-fit: cover; }
 .clip-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px 12px; }
 .clip-meta strong { max-width: 100%; }
 .stepper { display: flex; align-items: center; gap: 20px; }

@@ -34,6 +34,14 @@ const quickActions = [
 
 async function boot() {
   if (!me.value) return
+  // an invite opened before signing up (survives email confirmation / different landing page)
+  const pending = takePendingInvite()
+  if (pending) {
+    const { data, error } = await supabase.rpc('join_group_by_invite', { p_token: pending })
+    clearPendingInvite()
+    if (!error && data) { community.value = data as string; toast.ok('Entraste na comunidade!'); celebrate() }
+    else if (error) toast.error(error.message === 'Invalid or expired invite' ? 'O convite expirou. Pede um novo.' : error.message)
+  }
   await crew.loadGroups()
   await crew.loadMembers(true)
   ready.value = true
@@ -153,15 +161,15 @@ onMounted(boot)
 
 <style scoped>
 .shell { min-height: 100dvh; }
-.topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: linear-gradient(var(--ink) 70%, transparent); }
+.topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: max(12px, calc(env(safe-area-inset-top) + 6px)) 16px 10px; background: linear-gradient(var(--ink) calc(100% - 14px), transparent); }
 .crew-pill { display: flex; align-items: center; gap: 9px; min-width: 0; max-width: 62vw; height: 44px; padding: 0 12px 0 5px; border: 1.5px solid var(--line-strong); border-radius: 999px; background: var(--ink-2); font-weight: 700; transition: transform var(--fast) var(--ease-out); }
 .crew-pill:active { transform: scale(.97); }
 .crew-glyph { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border: 2px solid #000; border-radius: 999px; font-family: var(--font-display); font-weight: 800; }
 .wordmark { font-size: 26px; }
 .icon-btn.is-on { background: var(--paper); color: var(--on-color); border-color: var(--paper); }
-.main { width: 100%; max-width: 640px; margin: 0 auto; padding: 6px 16px calc(120px + env(safe-area-inset-bottom)); }
+.main { width: 100%; max-width: 640px; margin: 0 auto; padding: 6px 16px calc(100px + max(10px, env(safe-area-inset-bottom) - 14px)); }
 
-.tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 60; display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; max-width: 520px; margin: 0 auto; height: 68px; padding: 0 6px; border: 2px solid #000; border-radius: 999px; background: #1c1c21; box-shadow: 0 10px 30px #000a; transform: translateZ(0); }
+.tabbar { position: fixed; left: 12px; right: 12px; bottom: max(10px, calc(env(safe-area-inset-bottom) - 14px)); z-index: 60; display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; max-width: 520px; margin: 0 auto; height: 68px; padding: 0 6px; border: 2px solid #000; border-radius: 999px; background: #1c1c21; box-shadow: 0 10px 30px #000a; transform: translateZ(0); }
 .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--faint); font-size: 11px; font-weight: 700; transition: color var(--fast), transform var(--fast) var(--ease-out); }
 .tab:active { transform: scale(.9); }
 .tab.on { color: var(--paper); }

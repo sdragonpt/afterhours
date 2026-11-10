@@ -37,14 +37,13 @@ function pickDay(key: string) {
 
 // ── calendar app integration ───────────────────────────
 const calToken = computed(() => crew.group.value?.calendar_token || '')
-const calPath = (eventId?: string) => `/cal/${calToken.value}${eventId ? `/${eventId}` : ''}`
+// calendar files come from a separate origin (Cloudflare Worker): in an iPhone home-screen app a
+// same-origin .ics opens inside the app as a blank page; cross-origin opens Safari's Add-to-Calendar sheet.
+const calBase = (useRuntimeConfig().public.calUrl as string).replace(/\/$/, '')
+const calUrl = (eventId?: string) => `${calBase}/cal/${calToken.value}${eventId ? `/${eventId}` : ''}`
 /** single plan → native "Add to Calendar" sheet on iPhone */
-function addToCalendar(ev: any) {
-  if (!calToken.value) return toast.error('Falta correr a migração 008 no Supabase.')
-  window.open(calPath(ev.id), '_blank')
-}
 const showSubscribe = ref(false)
-const webcalUrl = computed(() => `webcal://${typeof window !== 'undefined' ? window.location.host : ''}${calPath()}`)
+const webcalUrl = computed(() => calUrl().replace(/^https?:/, 'webcal:'))
 const googleUrl = computed(() => `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl.value)}`)
 async function copyCalLink() {
   await navigator.clipboard.writeText(webcalUrl.value.replace('webcal://', 'https://'))
@@ -177,7 +176,7 @@ onMounted(() => plans.refresh())
         <div class="flex items-start justify-between gap-3">
           <span class="when-badge">{{ until(ev.starts_at) }}</span>
           <div class="flex gap-1">
-            <button class="mini" aria-label="Pôr na agenda do telemóvel" title="Pôr na agenda" @click="addToCalendar(ev)"><CalendarPlus :size="16" /></button>
+            <a v-if="calToken" class="mini" :href="calUrl(ev.id)" target="_blank" rel="noopener" aria-label="Pôr na agenda do telemóvel" title="Pôr na agenda"><CalendarPlus :size="16" /></a>
             <button class="mini" aria-label="Partilhar" @click="share(ev)"><Share2 :size="16" /></button>
             <button v-if="ev.created_by === me?.id" class="mini" aria-label="Cancelar plano" @click="remove(ev)"><Trash2 :size="16" /></button>
           </div>

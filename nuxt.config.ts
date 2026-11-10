@@ -18,6 +18,13 @@ export default defineNuxtConfig({
   // SPA: keep the session in localStorage (persistent) instead of an 8h cookie,
   // so friends don't get logged out every day.
   supabase: { redirect: false, useSsrCookies: false },
+  // Clip storage Worker (Cloudflare R2). Empty → uploads fall back to Supabase Storage.
+  runtimeConfig: {
+    public: {
+      mediaUrl: process.env.MEDIA_URL || '',
+      calUrl: process.env.CAL_URL || 'https://afterhours-cal.sergionunoribeiro.workers.dev',
+    },
+  },
   // emit /tab.html (not /tab/index.html) so Netlify serves /tab without a 301 to /tab/
   nitro: { prerender: { autoSubfolderIndex: false } },
   // instant swap + short enter fade (see .page-* in main.css)
