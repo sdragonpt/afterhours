@@ -10,7 +10,11 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
   css: ['~/assets/css/main.css'],
   // We handle auth redirects ourselves (middleware/auth.ts) so invite links survive the login step.
-  supabase: { redirect: false },
+  // SPA: keep the session in localStorage (persistent) instead of an 8h cookie,
+  // so friends don't get logged out every day.
+  supabase: { redirect: false, useSsrCookies: false },
+  // emit /tab.html (not /tab/index.html) so Netlify serves /tab without a 301 to /tab/
+  nitro: { prerender: { autoSubfolderIndex: false } },
   // instant swap + short enter fade (see .page-* in main.css)
   experimental: { viewTransition: false },
   app: {
