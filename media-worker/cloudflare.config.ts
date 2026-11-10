@@ -8,6 +8,7 @@ export default defineConfig({
     compatibilityDate: '2026-11-01',
     entrypoint,
     workersDev: true,
+    previewUrls: false,
     env: {
       MEDIA: bindings.r2({ name: 'afterhours-clips' }),
       SUPABASE_URL: bindings.text('https://mxgmllafsltirzpemmtn.supabase.co'),

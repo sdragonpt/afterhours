@@ -11,6 +11,7 @@ export default defineConfig({
     compatibilityDate: '2026-11-01',
     entrypoint,
     workersDev: true,
+    previewUrls: false,
     env: {
       SUPABASE_URL: bindings.text('https://mxgmllafsltirzpemmtn.supabase.co'),
       SUPABASE_KEY: bindings.text('sb_publishable_rBkv0UggqBdyN_Qhu1wXMw_7GhP8V1s'),

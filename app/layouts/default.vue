@@ -72,12 +72,17 @@ async function createCommunity() {
 }
 function go(to: string) { showAdd.value = false; navigateTo(to) }
 
+// live updates (Realtime) + refresh when the app comes back to the foreground
+const live = useLiveSync()
+async function pullRefresh() { await live.refreshAll(); toast.ok("Atualizado") }
+
 watch(() => me.value?.id, boot)
 onMounted(boot)
 </script>
 
 <template>
   <div class="shell">
+    <PullToRefresh v-if="ready && crew.groups.value.length" :on-refresh="pullRefresh" />
     <header class="topbar">
       <button v-if="crew.groups.value.length" class="crew-pill" @click="showSwitcher = true">
         <span class="crew-glyph fill-lime">{{ crew.group.value?.name.slice(0, 1).toUpperCase() }}</span>
