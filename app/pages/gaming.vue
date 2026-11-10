@@ -1,52 +1,242 @@
 <script setup lang="ts">
-import { Gamepad2, Upload, Play, Image as ImageIcon, Trophy, ArrowUpRight, LoaderCircle } from 'lucide-vue-next'
+import { Plus, Swords, Trophy, Clapperboard, Trash2, Minus, Share2 } from 'lucide-vue-next'
 definePageMeta({ middleware: 'auth' })
+
 const supabase = useSupabaseClient()
+const me = useMe()
+const route = useRoute()
+const router = useRouter()
 const community = useCommunity()
+const crew = useCrew()
+const toast = useToast()
+
+const lobbies = ref<any[]>([])
 const clips = ref<any[]>([])
-const loading = ref(false)
-const error = ref('')
-const urls = ref<Record<string,string>>({})
-const games = computed(() => ['All games', ...new Set(clips.value.map(c => c.game_title || 'Other'))])
-const selectedGame = ref('All games')
-const filtered = computed(() => selectedGame.value === 'All games' ? clips.value : clips.value.filter(c => (c.game_title || 'Other') === selectedGame.value))
+const urls = ref<Record<string, string>>({})
+const loading = ref(true)
+const game = ref('Todos')
+
+const games = computed(() => ['Todos', ...new Set(clips.value.map(c => c.game_title || 'Outros'))])
+const shownClips = computed(() => game.value === 'Todos' ? clips.value : clips.value.filter(c => (c.game_title || 'Outros') === game.value))
+/** most-reacted clip of the last 7 days */
+const clipOfWeek = computed(() => {
+  const week = Date.now() - 7 * 86400000
+  return [...clips.value].filter(c => new Date(c.created_at).getTime() > week && c.score > 0).sort((a, b) => b.score - a.score)[0] || null
+})
+const recentGames = computed(() => [...new Set([...lobbies.value.map(l => l.game), ...clips.value.map(c => c.game_title).filter(Boolean), 'CS2', 'Fortnite', 'Project Zomboid', 'EA FC'])].slice(0, 6))
+
 async function load() {
-  if (!community.value) { clips.value = []; return }
-  loading.value = true; error.value = ''
-  const { data: media, error: e } = await supabase.from('post_media').select('id,post_id,storage_path,media_type,file_name,game_title,created_at').eq('group_id', community.value).eq('media_type','video').order('created_at',{ascending:false}).limit(40)
-  if (e) { error.value = e.message; loading.value = false; return }
-  const postIds = (media || []).map(m => m.post_id)
-  if (!postIds.length) { clips.value = []; loading.value = false; return }
-  const { data: postRows } = await supabase.from('posts').select('id,body,author_id,created_at').in('id', postIds)
-  const authorIds = [...new Set((postRows || []).map(p => p.author_id))]
-  const { data: people } = authorIds.length ? await supabase.from('profiles').select('id,display_name').in('id', authorIds) : { data: [] }
-  const names = new Map((people || []).map(p => [p.id,p.display_name || 'Member']))
-  clips.value = (media || []).map(m => ({ ...m, post: (postRows || []).find(p => p.id === m.post_id), author_name: names.get((postRows || []).find(p => p.id === m.post_id)?.author_id) || 'Member' })).filter(m => m.post)
-  // one request for every signed URL instead of one per clip
+  if (!community.value) return
+  loading.value = true
+  const [calls, media] = await Promise.all([
+    supabase.from('game_calls').select('id,created_by,game,starts_at,slots').eq('group_id', community.value).gte('starts_at', new Date(Date.now() - 2 * 3600000).toISOString()).order('starts_at'),
+    supabase.from('post_media').select('id,post_id,storage_path,game_title,created_at').eq('group_id', community.value).eq('media_type', 'video').order('created_at', { ascending: false }).limit(40),
+  ])
+  if (calls.error) toast.error(calls.error.message.includes('game_calls') ? 'Falta correr a migração 007 no Supabase.' : calls.error.message)
+  const callIds = (calls.data || []).map(c => c.id)
+  const { data: players } = callIds.length ? await supabase.from('game_call_players').select('call_id,user_id,joined_at').in('call_id', callIds).order('joined_at') : { data: [] as any[] }
+  lobbies.value = (calls.data || []).map(c => ({ ...c, players: (players || []).filter((p: any) => p.call_id === c.id).map((p: any) => p.user_id) }))
+
+  const postIds = (media.data || []).map(m => m.post_id)
+  const [posts, reacts] = postIds.length ? await Promise.all([
+    supabase.from('posts').select('id,author_id,body').in('id', postIds),
+    supabase.from('post_reactions').select('post_id').in('post_id', postIds),
+  ]) : [{ data: [] }, { data: [] }] as any[]
+  clips.value = (media.data || []).map(m => {
+    const p = posts.data?.find((x: any) => x.id === m.post_id)
+    return { ...m, author_id: p?.author_id, body: p?.body, score: (reacts.data || []).filter((r: any) => r.post_id === m.post_id).length }
+  }).filter(c => c.author_id)
   if (clips.value.length) {
     const { data: signed } = await supabase.storage.from('community-media').createSignedUrls(clips.value.map(c => c.storage_path), 3600)
-    for (const row of signed || []) {
-      const clip = clips.value.find(c => c.storage_path === row.path)
-      if (clip && row.signedUrl) urls.value[clip.id] = row.signedUrl
-    }
+    for (const s of signed || []) { const c = clips.value.find(x => x.storage_path === s.path); if (c && s.signedUrl) urls.value[c.id] = s.signedUrl }
   }
   loading.value = false
 }
+
+const inLobby = (l: any) => l.players.includes(me.value?.id)
+async function toggleLobby(l: any, e: MouseEvent) {
+  if (!me.value) return
+  if (inLobby(l)) {
+    l.players = l.players.filter((id: string) => id !== me.value!.id)
+    const { error } = await supabase.from('game_call_players').delete().eq('call_id', l.id).eq('user_id', me.value.id)
+    if (error) { toast.error(error.message); load() }
+  } else {
+    if (l.players.length >= l.slots) return toast.error('Lobby cheio.')
+    l.players = [...l.players, me.value.id]
+    celebrate(originFrom(e))
+    const { error } = await supabase.from('game_call_players').insert({ call_id: l.id, user_id: me.value.id })
+    if (error) { toast.error(error.message); load() }
+    else if (l.players.length === l.slots) toast.ok('Lobby cheio. GG!')
+  }
+}
+async function removeLobby(l: any) {
+  const { error } = await supabase.from('game_calls').delete().eq('id', l.id)
+  if (error) return toast.error(error.message)
+  lobbies.value = lobbies.value.filter(x => x.id !== l.id)
+}
+function shareLobby(l: any) {
+  shareOut(`🎮 Quem joga ${l.game}? ${until(l.starts_at)} — ${l.players.length}/${l.slots}. Entra:`, '/gaming')
+}
+
+// ── new lobby ───────────────────────────────────────────
+const creating = ref(false)
+const newGame = ref('')
+const when = ref('')
+const slots = ref(5)
+const saving = ref(false)
+const times = computed(() => {
+  const now = new Date(); now.setMinutes(now.getMinutes() + 5, 0, 0)
+  return [{ label: 'Agora', d: now }, { label: '21h', d: nextAt(21) }, { label: '22h', d: nextAt(22) }, { label: '23h', d: nextAt(23) }]
+})
+function openCreate() { newGame.value = recentGames.value[0] || ''; when.value = toLocalInput(times.value[0]!.d); slots.value = 5; creating.value = true }
+async function createLobby(e: MouseEvent) {
+  if (!community.value || !newGame.value.trim()) return
+  saving.value = true
+  const { error } = await supabase.from('game_calls').insert({ group_id: community.value, created_by: me.value!.id, game: newGame.value.trim(), starts_at: new Date(when.value).toISOString(), slots: slots.value })
+  saving.value = false
+  if (error) return toast.error(error.message)
+  creating.value = false
+  celebrate(originFrom(e))
+  toast.ok('Lobby aberto!')
+  load()
+}
+
+watch(() => route.query.new, (n) => { if (n) { openCreate(); router.replace({ query: {} }) } }, { immediate: true })
 watch(community, load)
 onMounted(load)
 </script>
+
 <template>
-  <div class="content-page">
-    <header class="content-header"><div><span class="eyebrow"><Gamepad2 :size="13"/> GAME ON</span><h1>Gaming hub<span class="accent-dot">.</span></h1><p>Your crew's best plays, worst fails and everything in between.</p></div><NuxtLink to="/" class="secondary-button">Share a clip <ArrowUpRight :size="13"/></NuxtLink></header>
-    <section class="gaming-hero"><div class="gaming-hero-copy"><span class="eyebrow">THE HIGHLIGHT REEL</span><h2>Moments worth<br/><em>replaying.</em></h2><p>Every clutch, every chaos moment, saved in one place.</p><NuxtLink to="/" class="primary-button">Upload a moment <Upload :size="14"/></NuxtLink></div><div class="gaming-hero-art"><div class="art-grid"/><div class="art-controller"><Gamepad2 :size="82" stroke-width="1"/></div><span class="art-tag">CREW ONLY / 001</span></div></section>
-    <div class="gaming-toolbar"><div><h2 class="surface-title">Latest clips</h2><p class="text-muted">Private highlights from your community.</p></div><select v-model="selectedGame" class="field game-filter"><option v-for="g in games" :key="g">{{ g }}</option></select></div>
-    <p v-if="error" class="notice error-notice">{{ error }}</p>
-    <div v-if="loading" class="loading-state"><LoaderCircle class="spin"/> Loading clips...</div>
-    <div v-else-if="!filtered.length" class="surface-card empty-inline"><div class="empty-icon"><Play :size="22"/></div><strong class="block text-white mb-2">No clips in the library yet</strong>Share a video from the lounge feed and it will appear here automatically.</div>
-    <div v-else class="clip-grid"><article v-for="clip in filtered" :key="clip.id" class="clip-card"><video :src="urls[clip.id]" controls playsinline preload="metadata"/><div class="clip-info"><div><strong>{{ clip.post.body }}</strong><small>{{ clip.game_title || 'Other game' }} · {{ clip.author_name }} · {{ new Date(clip.created_at).toLocaleDateString('pt-PT') }}</small></div><span class="clip-play"><Play :size="13" fill="currentColor"/></span></div></article></div>
-    <section class="surface-card gaming-tip"><div class="quick-icon purple"><Trophy :size="18"/></div><div><strong>Hall of fame coming soon</strong><p class="text-muted">Community voting and weekly top plays will turn your best moments into legends.</p></div><span class="pill">NEXT UPDATE</span></section>
+  <div class="gaming">
+    <header class="page-head">
+      <div>
+        <p class="kicker">Gaming</p>
+        <h1 class="display h-xl">Quem<br>joga<span class="t-sky">?</span></h1>
+      </div>
+      <button class="btn btn-sky" @click="openCreate"><Swords :size="18" /> Lobby</button>
+    </header>
+
+    <!-- lobbies -->
+    <div v-if="loading && !lobbies.length" class="skeleton" style="height:150px" />
+    <TransitionGroup v-else-if="lobbies.length" name="list" tag="div" class="flex flex-col gap-4 relative">
+      <article v-for="l in lobbies" :key="l.id" class="lobby sticker">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="kicker lobby-kicker">{{ until(l.starts_at) }} · {{ crew.nameOf(l.created_by) }}</p>
+            <h2 class="display lobby-game">{{ l.game }}</h2>
+          </div>
+          <div class="flex gap-1">
+            <button class="mini" aria-label="Partilhar" @click="shareLobby(l)"><Share2 :size="15" /></button>
+            <button v-if="l.created_by === me?.id" class="mini" aria-label="Fechar lobby" @click="removeLobby(l)"><Trash2 :size="15" /></button>
+          </div>
+        </div>
+        <div class="slots">
+          <span v-for="i in l.slots" :key="i" class="slot" :class="{ filled: i <= l.players.length }">
+            <Avatar v-if="l.players[i - 1]" :name="crew.nameOf(l.players[i - 1])" :color="crew.colorOf(l.players[i - 1])" :size="38" />
+          </span>
+        </div>
+        <div class="flex items-center justify-between gap-3 mt-4">
+          <b class="num text-2xl">{{ l.players.length }}/{{ l.slots }}</b>
+          <button class="btn" :class="inLobby(l) ? 'btn-ghost-dark' : 'btn-ink'" :disabled="!inLobby(l) && l.players.length >= l.slots" @click="toggleLobby(l, $event)">
+            {{ inLobby(l) ? 'Sair' : l.players.length >= l.slots ? 'Cheio' : 'Entrar' }}
+          </button>
+        </div>
+      </article>
+    </TransitionGroup>
+    <button v-else class="lobby-empty" @click="openCreate">
+      <Swords :size="22" class="t-sky" />
+      <span><b>Nenhum lobby aberto.</b><br><span class="muted">Abre um e o Discord avisa a malta.</span></span>
+      <Plus :size="20" />
+    </button>
+
+    <!-- clip of the week -->
+    <section v-if="clipOfWeek" class="cotw">
+      <div class="cotw-badge fill-sun"><Trophy :size="16" /> Clip da semana</div>
+      <video :src="urls[clipOfWeek.id]" controls playsinline preload="metadata" />
+      <div class="cotw-info">
+        <Avatar :name="crew.nameOf(clipOfWeek.author_id)" :color="crew.colorOf(clipOfWeek.author_id)" :size="36" />
+        <div class="min-w-0 flex-1"><strong class="block truncate">{{ clipOfWeek.body }}</strong><small class="muted">{{ crew.nameOf(clipOfWeek.author_id) }} · {{ clipOfWeek.game_title || 'Outros' }} · {{ clipOfWeek.score }} reações</small></div>
+      </div>
+    </section>
+
+    <!-- library -->
+    <section>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="display h-md m-0">Clips</h2>
+        <NuxtLink to="/?new=clip" class="btn btn-ghost btn-sm"><Clapperboard :size="15" /> Enviar</NuxtLink>
+      </div>
+      <div v-if="games.length > 2" class="flex gap-2 overflow-x-auto mb-4" style="scrollbar-width:none">
+        <button v-for="g in games" :key="g" class="chip" :class="{ on: game === g }" @click="game = g">{{ g }}</button>
+      </div>
+      <div v-if="!shownClips.length && !loading" class="empty">
+        <p class="display">Zero highlights.</p>
+        <p class="muted m-0">Grava a próxima jogada absurda e manda para aqui.</p>
+      </div>
+      <div class="clip-grid stagger">
+        <article v-for="c in shownClips" :key="c.id" class="clip">
+          <video :src="urls[c.id]" controls playsinline preload="metadata" />
+          <div class="clip-meta">
+            <span class="tag fill-sky">{{ c.game_title || 'Outros' }}</span>
+            <strong class="truncate">{{ c.body }}</strong>
+            <small class="faint">{{ crew.nameOf(c.author_id) }} · {{ ago(c.created_at) }}</small>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <Sheet :open="creating" kicker="Quem joga?" title="Abrir lobby" @close="creating = false">
+      <div class="flex flex-col gap-5">
+        <div>
+          <span class="label">Jogo</span>
+          <input v-model="newGame" class="field title-field" maxlength="60" placeholder="CS2, Zomboid…">
+          <div class="flex gap-2 flex-wrap mt-2"><button v-for="g in recentGames" :key="g" class="chip" :class="{ on: newGame === g }" @click="newGame = g">{{ g }}</button></div>
+        </div>
+        <div>
+          <span class="label">Quando</span>
+          <div class="flex gap-2 flex-wrap mb-2"><button v-for="t in times" :key="t.label" class="chip" :class="{ on: when === toLocalInput(t.d) }" @click="when = toLocalInput(t.d)">{{ t.label }}</button></div>
+          <input v-model="when" type="datetime-local" class="field">
+        </div>
+        <div>
+          <span class="label">Lugares</span>
+          <div class="stepper">
+            <button class="icon-btn" aria-label="Menos" :disabled="slots <= 2" @click="slots--"><Minus :size="18" /></button>
+            <span class="num text-4xl">{{ slots }}</span>
+            <button class="icon-btn" aria-label="Mais" :disabled="slots >= 20" @click="slots++"><Plus :size="18" /></button>
+          </div>
+        </div>
+        <button class="btn btn-sky btn-block" :disabled="saving || !newGame.trim()" @click="createLobby">{{ saving ? 'A abrir…' : 'Abrir lobby' }}</button>
+      </div>
+    </Sheet>
   </div>
 </template>
+
 <style scoped>
-.gaming-hero{position:relative;display:grid;grid-template-columns:1fr .8fr;min-height:230px;overflow:hidden;border:1px solid #a18bff22;border-radius:16px;background:radial-gradient(circle at 78% 35%,#8b70ff2b,transparent 35%),linear-gradient(115deg,#201b35,#12141c 70%);margin-bottom:27px}.gaming-hero-copy{position:relative;z-index:2;padding:27px}.gaming-hero h2{margin:12px 0 7px;font-family:'Space Grotesk';font-size:34px;line-height:1.03;letter-spacing:-.06em}.gaming-hero h2 em{color:#b8a6ff;font-style:normal}.gaming-hero p{margin:0 0 17px;color:#9298aa;font-size:11px}.gaming-hero-art{position:relative;display:grid;place-items:center;overflow:hidden;color:#b5a3ff}.art-grid{position:absolute;inset:0;background-image:linear-gradient(#a18bff10 1px,transparent 1px),linear-gradient(90deg,#a18bff10 1px,transparent 1px);background-size:25px 25px;transform:perspective(250px) rotateY(-18deg) scale(1.3);mask-image:linear-gradient(90deg,transparent,#000)}.art-controller{display:grid;place-items:center;width:145px;height:115px;border:1px solid #b9a8ff40;border-radius:30px;background:#b19cff12;box-shadow:0 0 65px #967bff30;transform:rotate(-12deg)}.art-tag{position:absolute;right:20px;bottom:16px;color:#8276b6;font-size:8px;letter-spacing:.2em}.gaming-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.gaming-toolbar .surface-title{margin-bottom:4px}.gaming-toolbar p{margin:0;font-size:10px}.game-filter{width:190px;margin:0}.clip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.clip-card{overflow:hidden;border:1px solid var(--line);border-radius:13px;background:#151821}.clip-card video{display:block;width:100%;aspect-ratio:16/9;background:#07080b;object-fit:contain}.clip-info{display:flex;align-items:center;gap:10px;padding:12px}.clip-info>div{min-width:0;flex:1}.clip-info strong,.clip-info small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.clip-info strong{font-size:10px}.clip-info small{margin-top:4px;color:#7d8495;font-size:9px}.clip-play{display:grid;place-items:center;width:27px;height:27px;border-radius:8px;background:#a18bff19;color:#bbaaff}.gaming-tip{display:flex;align-items:center;gap:12px;margin-top:18px}.gaming-tip>div:nth-child(2){flex:1}.gaming-tip strong{font-size:11px}.gaming-tip p{margin:4px 0 0;font-size:9px}.gaming-tip .pill{white-space:nowrap}@media(max-width:650px){.gaming-hero{grid-template-columns:1fr}.gaming-hero-art{position:absolute;inset:0 0 0 45%;opacity:.5}.gaming-hero-copy{padding:22px}.gaming-hero h2{font-size:29px}.clip-grid{grid-template-columns:1fr}.gaming-tip .pill{display:none}.game-filter{width:145px}}
+.gaming { display: flex; flex-direction: column; gap: 22px; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-top: 8px; }
+.page-head h1 { margin: 4px 0 0; }
+.btn-sky { background: var(--sky); color: var(--on-color); box-shadow: var(--sticker-shadow); }
+.btn-ink { background: var(--ink); color: var(--paper); border-color: #000; }
+.btn-ghost-dark { background: transparent; color: var(--on-color); border-color: #000; }
+.lobby { padding: 18px; background: var(--sky); color: var(--on-color); }
+.lobby-kicker { color: #0c0c0e99; }
+.lobby-game { margin: 6px 0 0; font-size: 38px; overflow-wrap: anywhere; }
+.mini { display: grid; place-items: center; width: 36px; height: 36px; border: 2px solid #000; border-radius: 999px; background: #ffffff55; }
+.slots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.slot { display: grid; place-items: center; width: 42px; height: 42px; border: 2px dashed #0c0c0e66; border-radius: 999px; }
+.slot.filled { border: 0; animation: pop-in var(--slow) var(--ease-spring) both; }
+.lobby-empty { display: flex; align-items: center; gap: 14px; width: 100%; padding: 18px; border: 2px dashed var(--line-strong); border-radius: var(--r-lg); background: none; text-align: left; transition: border-color var(--fast); }
+.lobby-empty:hover { border-color: var(--sky); }
+.lobby-empty > span { flex: 1; }
+.cotw { position: relative; overflow: hidden; border: 2px solid #000; border-radius: var(--r-lg); background: var(--ink-2); box-shadow: 6px 6px 0 var(--sun); }
+.cotw-badge { position: absolute; z-index: 2; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 2px solid #000; border-radius: 999px; font-weight: 800; font-size: 13px; transform: rotate(-3deg); }
+.cotw video { display: block; width: 100%; aspect-ratio: 16/9; background: #000; }
+.cotw-info { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.clip-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 560px) { .clip-grid { grid-template-columns: 1fr 1fr; } }
+.clip { overflow: hidden; border: 1.5px solid var(--line); border-radius: var(--r-md); background: var(--ink-2); }
+.clip video { display: block; width: 100%; aspect-ratio: 16/9; background: #000; }
+.clip-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px 12px; }
+.clip-meta strong { max-width: 100%; }
+.stepper { display: flex; align-items: center; gap: 20px; }
+.title-field { font-family: var(--font-display); font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
 </style>

@@ -1,286 +1,217 @@
 <script setup lang="ts">
-import { Wallet, Plus, ArrowRight, Check, Share2, Trash2, X, LoaderCircle, BellRing, Receipt, HandCoins } from 'lucide-vue-next'
+import { Plus, ArrowRight, Share2, BellRing, Trash2, Receipt, HandCoins, Check } from 'lucide-vue-next'
 import type { Transfer } from '~/utils/settle'
 definePageMeta({ middleware: 'auth' })
 
 const supabase = useSupabaseClient()
-const user = useMe()
+const me = useMe()
+const route = useRoute()
+const router = useRouter()
 const community = useCommunity()
+const crew = useCrew()
+const ledger = useLedger()
+const toast = useToast()
 
-const members = ref<{ user_id: string; name: string }[]>([])
-const expenses = ref<any[]>([])
-const shares = ref<any[]>([])
-const settlements = ref<any[]>([])
-const loading = ref(false)
-const saving = ref(false)
-const error = ref('')
-const success = ref('')
-const hasDiscord = ref(false)
+const myId = computed(() => me.value?.id || '')
+const others = computed(() => ledger.transfers.value.filter(t => t.from !== myId.value && t.to !== myId.value))
+const totalSpent = computed(() => ledger.expenses.value.reduce((s, e) => s + Number(e.amount), 0))
+const history = computed(() => [
+  ...ledger.expenses.value.map(e => ({ kind: 'expense' as const, id: e.id, at: e.created_at, row: e })),
+  ...ledger.settlements.value.map(s => ({ kind: 'settlement' as const, id: s.id, at: s.created_at, row: s })),
+].sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 40))
+const splitCount = (id: string) => ledger.shares.value.filter(s => s.expense_id === id).length
 
-// expense form
-const showExpense = ref(false)
-const description = ref('')
+async function markPaid(t: Transfer, e: MouseEvent) {
+  const sentence = t.from === myId.value ? `pagaste ${euros(t.amount)} a ${crew.nameOf(t.to)}` : `${crew.nameOf(t.from)} te pagou ${euros(t.amount)}`
+  if (!confirm(`Confirmas que ${sentence}?`)) return
+  const { error } = await supabase.from('settlements').insert({ group_id: community.value, payer_id: t.from, payee_id: t.to, amount: t.amount, note: 'Acerto' })
+  if (error) return toast.error(error.message)
+  celebrate(originFrom(e))
+  toast.ok('Contas acertadas!')
+  ledger.load()
+}
+async function remove(kind: 'expense' | 'settlement', id: string) {
+  if (!confirm(kind === 'expense' ? 'Apagar esta despesa?' : 'Apagar este pagamento?')) return
+  const { error } = await supabase.from(kind === 'expense' ? 'expenses' : 'settlements').delete().eq('id', id)
+  if (error) return toast.error(error.message)
+  ledger.load()
+}
+function shareSummary() {
+  const t = ledger.transfers.value
+  shareOut(t.length ? ['🧾 The Tab — quem paga a quem:', ...t.map(x => `• ${crew.nameOf(x.from).replace(/^Tu$/, 'Eu')} → ${crew.nameOf(x.to).replace(/^Tu$/, 'mim')}: ${euros(x.amount)}`)].join('\n') : '🧾 The Tab: está tudo acertado 🙌', '/tab')
+}
+async function remind() {
+  const { data, error } = await supabase.rpc('discord_send_tab_reminder', { p_group: community.value })
+  if (error) return toast.error(error.message)
+  data ? toast.ok('Lembrete enviado para o Discord') : toast.error('Discord não está ligado (dono liga em Malta).')
+}
+
+// ── new expense ─────────────────────────────────────────
+const adding = ref(false)
+const desc = ref('')
 const amount = ref<number | null>(null)
 const paidBy = ref('')
-const participants = ref<string[]>([])
-
-const me = computed(() => user.value?.id || '')
-const nameOf = (id: string) => id === me.value ? 'Tu' : (members.value.find(m => m.user_id === id)?.name || 'Ex-membro')
-
-const balanceMap = computed(() => {
-  const map: Record<string, number> = {}
-  for (const m of members.value) map[m.user_id] = 0
-  for (const e of expenses.value) map[e.paid_by] = (map[e.paid_by] || 0) + Number(e.amount)
-  for (const s of shares.value) map[s.user_id] = (map[s.user_id] || 0) - Number(s.amount_owed)
-  for (const s of settlements.value) {
-    map[s.payer_id] = (map[s.payer_id] || 0) + Number(s.amount)
-    map[s.payee_id] = (map[s.payee_id] || 0) - Number(s.amount)
-  }
-  return map
-})
-const myBalance = computed(() => Math.round((balanceMap.value[me.value] || 0) * 100) / 100)
-const transfers = computed(() => simplifyDebts(balanceMap.value))
-const myTransfers = computed(() => transfers.value.filter(t => t.from === me.value || t.to === me.value))
-const otherTransfers = computed(() => transfers.value.filter(t => t.from !== me.value && t.to !== me.value))
-const totalOpen = computed(() => transfers.value.reduce((sum, t) => sum + t.amount, 0))
-
-const history = computed(() => {
-  const rows = [
-    ...expenses.value.map(e => ({ kind: 'expense' as const, id: e.id, at: e.created_at, row: e })),
-    ...settlements.value.map(s => ({ kind: 'settlement' as const, id: s.id, at: s.created_at, row: s })),
-  ]
-  return rows.sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 30)
-})
-const sharesOf = (expenseId: string) => shares.value.filter(s => s.expense_id === expenseId)
-const canDelete = (row: any) => row.created_by === me.value || row.paid_by === me.value
-
-const perPerson = computed(() => amount.value && participants.value.length ? amount.value / participants.value.length : 0)
-
-async function refresh() {
-  if (!community.value || !me.value) return
-  loading.value = true; error.value = ''
-  const [memberRes, expenseRes, settlementRes, integrationRes] = await Promise.all([
-    supabase.from('group_members').select('user_id').eq('group_id', community.value),
-    supabase.from('expenses').select('id,description,amount,paid_by,created_by,created_at').eq('group_id', community.value).order('created_at', { ascending: false }),
-    supabase.from('settlements').select('id,payer_id,payee_id,amount,note,created_by,created_at').eq('group_id', community.value).order('created_at', { ascending: false }),
-    supabase.from('group_integrations').select('discord_webhook_url').eq('group_id', community.value).maybeSingle(),
-  ])
-  const firstError = memberRes.error || expenseRes.error || settlementRes.error
-  if (firstError) { error.value = firstError.message; loading.value = false; return }
-
-  const ids = (memberRes.data || []).map((m: any) => m.user_id)
-  const { data: people } = ids.length ? await supabase.from('profiles').select('id,display_name').in('id', ids) : { data: [] as any[] }
-  members.value = ids.map((id: string) => ({ user_id: id, name: people?.find((p: any) => p.id === id)?.display_name || 'Membro' }))
-  expenses.value = expenseRes.data || []
-  settlements.value = settlementRes.data || []
-  // RLS: only the owner can read the integration row; a member just won't see it.
-  hasDiscord.value = !!integrationRes.data?.discord_webhook_url
-
-  const expenseIds = expenses.value.map(e => e.id)
-  if (expenseIds.length) {
-    const { data, error: e } = await supabase.from('expense_shares').select('expense_id,user_id,amount_owed').in('expense_id', expenseIds)
-    if (e) error.value = e.message
-    shares.value = data || []
-  } else shares.value = []
-  loading.value = false
+const who = ref<string[]>([])
+const saving = ref(false)
+const presets = ['Jantar', 'Finos', 'Gasolina', 'Uber', 'Supermercado', 'Bilhetes']
+const each = computed(() => amount.value && who.value.length ? amount.value / who.value.length : 0)
+function openAdd() {
+  desc.value = ''; amount.value = null; paidBy.value = myId.value
+  who.value = crew.members.value.map(m => m.user_id); adding.value = true
 }
-
-function openExpense() {
-  description.value = ''; amount.value = null
-  paidBy.value = me.value
-  participants.value = members.value.map(m => m.user_id)
-  showExpense.value = true; error.value = ''; success.value = ''
-}
-function toggleAll() {
-  participants.value = participants.value.length === members.value.length ? [] : members.value.map(m => m.user_id)
-}
-
-async function addExpense() {
-  if (!community.value || !description.value.trim() || !amount.value || amount.value <= 0) return
-  if (!participants.value.length) { error.value = 'Escolhe pelo menos uma pessoa para dividir.'; return }
-  saving.value = true; error.value = ''
-  const { error: e } = await supabase.rpc('create_expense', {
-    p_group: community.value,
-    p_description: description.value.trim(),
-    p_amount: amount.value,
-    p_participants: participants.value,
-    p_paid_by: paidBy.value || me.value,
-  })
+function toggleWho(id: string) { who.value = who.value.includes(id) ? who.value.filter(x => x !== id) : [...who.value, id] }
+async function addExpense(e: MouseEvent) {
+  if (!desc.value.trim() || !amount.value || amount.value <= 0 || !who.value.length) return
+  saving.value = true
+  const { error } = await supabase.rpc('create_expense', { p_group: community.value, p_description: desc.value.trim(), p_amount: amount.value, p_participants: who.value, p_paid_by: paidBy.value })
   saving.value = false
-  if (e) { error.value = e.message; return }
-  showExpense.value = false
-  success.value = 'Despesa registada.'
-  await refresh()
+  if (error) return toast.error(error.message)
+  adding.value = false
+  celebrate(originFrom(e))
+  toast.ok('Despesa registada')
+  ledger.load()
 }
 
-async function markPaid(t: Transfer) {
-  const who = t.from === me.value ? `pagaste ${euros(t.amount)} a ${nameOf(t.to)}` : `${nameOf(t.from)} te pagou ${euros(t.amount)}`
-  if (!confirm(`Confirmas que ${who}?`)) return
-  saving.value = true; error.value = ''; success.value = ''
-  const { error: e } = await supabase.from('settlements').insert({
-    group_id: community.value, payer_id: t.from, payee_id: t.to, amount: t.amount, note: 'Acerto de contas',
-  })
-  saving.value = false
-  if (e) { error.value = e.message; return }
-  success.value = 'Pagamento registado. 🤝'
-  await refresh()
-}
-
-async function removeRow(kind: 'expense' | 'settlement', id: string) {
-  if (!confirm(kind === 'expense' ? 'Apagar esta despesa? Os saldos são recalculados.' : 'Apagar este pagamento?')) return
-  const { error: e } = await supabase.from(kind === 'expense' ? 'expenses' : 'settlements').delete().eq('id', id)
-  if (e) { error.value = e.message; return }
-  await refresh()
-}
-
-function summaryText() {
-  if (!transfers.value.length) return '🧾 The Tab: está tudo acertado! 🙌'
-  return ['🧾 The Tab — quem deve a quem:', ...transfers.value.map(t => `• ${nameOf(t.from).replace('Tu', 'Eu')} → ${nameOf(t.to).replace('Tu', 'mim')}: ${euros(t.amount)}`)].join('\n')
-}
-async function shareSummary() { await shareOut(summaryText(), '/tab') }
-async function remindDiscord() {
-  const { data, error: e } = await supabase.rpc('discord_send_tab_reminder', { p_group: community.value })
-  if (e) { error.value = e.message; return }
-  success.value = data ? 'Lembrete enviado para o Discord. 😈' : 'Esta comunidade ainda não tem Discord ligado (o dono liga em Membros).'
-}
-
-watch([community, me], refresh)
-onMounted(refresh)
+watch(() => route.query.new, (n) => { if (n) { if (crew.members.value.length) openAdd(); else watch(() => crew.members.value.length, (l) => l && openAdd(), { once: true }); router.replace({ query: {} }) } }, { immediate: true })
+watch(community, () => ledger.load())
+onMounted(() => ledger.load())
 </script>
 
 <template>
-  <div class="content-page">
-    <header class="content-header">
+  <div class="tab">
+    <header class="page-head">
       <div>
-        <span class="eyebrow"><Wallet :size="13"/> CONTAS DO GRUPO</span>
-        <h1>The Tab<span class="accent-dot">.</span></h1>
-        <p>Contas claras. Amizades intactas.</p>
+        <p class="kicker">The Tab</p>
+        <h1 class="display h-xl">Contas<br>claras<span class="t-lime">.</span></h1>
       </div>
-      <div class="flex gap-2">
-        <button class="secondary-button flex items-center gap-2" :disabled="!community" @click="shareSummary"><Share2 :size="14"/> Partilhar</button>
-        <button class="primary-button" :disabled="!community" @click="openExpense"><Plus :size="15"/> Despesa</button>
-      </div>
+      <button class="btn btn-primary" @click="openAdd"><Plus :size="18" /> Despesa</button>
     </header>
 
-    <div v-if="!community" class="surface-card empty-inline">Cria ou entra numa comunidade para usares o The Tab.</div>
-    <template v-else>
-      <p v-if="error" class="notice error-notice">{{ error }}</p>
-      <p v-if="success" class="notice success-notice">{{ success }}</p>
-
-      <div class="stat-grid">
-        <div class="stat-card hero-balance" :class="myBalance > 0 ? 'pos' : myBalance < 0 ? 'neg' : ''">
-          <span>O teu saldo</span>
-          <strong>{{ euros(myBalance) }}</strong>
-          <small>{{ myBalance > 0 ? 'Tens a receber' : myBalance < 0 ? 'Tens a pagar' : 'Estás em dia ✨' }}</small>
-        </div>
-        <div class="stat-card"><span>Em aberto no grupo</span><strong>{{ euros(totalOpen) }}</strong><small>{{ transfers.length }} {{ transfers.length === 1 ? 'pagamento pendente' : 'pagamentos pendentes' }}</small></div>
-        <div class="stat-card"><span>Despesas registadas</span><strong>{{ expenses.length }}</strong><small>{{ euros(expenses.reduce((s, e) => s + Number(e.amount), 0)) }} no total</small></div>
+    <!-- hero balance -->
+    <section class="balance sticker" :class="ledger.myBalance.value < -0.004 ? 'fill-coral' : ledger.myBalance.value > 0.004 ? 'fill-lime' : 'fill-paper'">
+      <p class="kicker balance-k">{{ ledger.myBalance.value < -0.004 ? 'Tu deves' : ledger.myBalance.value > 0.004 ? 'Tens a receber' : 'O teu saldo' }}</p>
+      <p class="display balance-n num">{{ euros(Math.abs(ledger.myBalance.value)) }}</p>
+      <p class="balance-sub">{{ ledger.myBalance.value < -0.004 ? 'Paga antes que alguém te lembre no Discord.' : ledger.myBalance.value > 0.004 ? 'A malta deve-te. Cobra com estilo.' : 'Limpo como um lençol lavado.' }}</p>
+      <div class="flex gap-2 mt-4">
+        <button class="btn btn-sm btn-inkish" @click="shareSummary"><Share2 :size="15" /> Partilhar</button>
+        <button class="btn btn-sm btn-inkish" @click="remind"><BellRing :size="15" /> Lembrar no Discord</button>
       </div>
+    </section>
 
-      <div class="tab-grid">
-        <section class="surface-card">
-          <div class="section-head mb-3">
-            <h2 class="surface-title !mb-0">Quem paga a quem</h2>
-            <button class="secondary-button flex items-center gap-2" title="Envia o resumo das dívidas para o canal do Discord" @click="remindDiscord"><BellRing :size="13"/> Lembrar no Discord</button>
+    <!-- my debts as tickets -->
+    <section v-if="ledger.myTransfers.value.length" class="flex flex-col gap-3">
+      <h2 class="kicker m-0">Contigo</h2>
+      <TransitionGroup name="list" tag="div" class="flex flex-col gap-3 relative">
+        <div v-for="t in ledger.myTransfers.value" :key="t.from + t.to" class="ticket" :class="t.from === myId ? 'owe' : 'get'">
+          <Avatar :name="crew.nameOf(t.from === myId ? t.to : t.from)" :color="crew.colorOf(t.from === myId ? t.to : t.from)" :size="44" />
+          <div class="flex-1 min-w-0">
+            <strong class="block truncate">{{ t.from === myId ? `Pagas a ${crew.nameOf(t.to)}` : `${crew.nameOf(t.from)} paga-te` }}</strong>
+            <span class="num ticket-n">{{ euros(t.amount) }}</span>
           </div>
-          <p class="text-muted text-[11px] mb-3">Calculado com o mínimo de transferências possível.</p>
+          <button class="btn btn-sm" :class="t.from === myId ? 'btn-danger' : 'btn-primary'" @click="markPaid(t, $event)"><Check :size="15" /> {{ t.from === myId ? 'Paguei' : 'Recebi' }}</button>
+        </div>
+      </TransitionGroup>
+    </section>
 
-          <div v-if="loading && !members.length" class="loading-state"><LoaderCircle class="spin"/> A carregar…</div>
-          <div v-else-if="!transfers.length" class="empty-inline">🙌 Ninguém deve nada a ninguém.</div>
-
-          <div class="stack-list">
-            <div v-for="t in myTransfers" :key="t.from + t.to" class="transfer-row mine">
-              <span class="avatar avatar-tiny">{{ nameOf(t.from).slice(0,1) }}</span>
-              <div class="transfer-main">
-                <strong>{{ nameOf(t.from) }} <ArrowRight :size="12" class="inline"/> {{ nameOf(t.to) }}</strong>
-                <small>{{ t.from === me ? 'Tens de pagar' : 'Tens a receber' }}</small>
-              </div>
-              <strong class="transfer-amount" :class="t.from === me ? 'neg' : 'pos'">{{ euros(t.amount) }}</strong>
-              <button class="icon-button" :disabled="saving" title="Marcar como pago" @click="markPaid(t)"><Check :size="15"/></button>
-            </div>
-            <div v-for="t in otherTransfers" :key="t.from + t.to" class="transfer-row">
-              <span class="avatar avatar-tiny">{{ nameOf(t.from).slice(0,1) }}</span>
-              <div class="transfer-main"><strong>{{ nameOf(t.from) }} <ArrowRight :size="12" class="inline"/> {{ nameOf(t.to) }}</strong></div>
-              <strong class="transfer-amount">{{ euros(t.amount) }}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section class="surface-card">
-          <h2 class="surface-title">Saldos</h2>
-          <div class="stack-list">
-            <div v-for="m in [...members].sort((a, b) => (balanceMap[b.user_id] || 0) - (balanceMap[a.user_id] || 0))" :key="m.user_id" class="balance-row">
-              <span class="avatar avatar-tiny">{{ m.name.slice(0,1).toUpperCase() }}</span>
-              <span class="flex-1 truncate">{{ nameOf(m.user_id) }}</span>
-              <span class="tabular-nums font-semibold" :class="(balanceMap[m.user_id] || 0) > 0.004 ? 'pos' : (balanceMap[m.user_id] || 0) < -0.004 ? 'neg' : 'text-muted'">{{ euros(balanceMap[m.user_id] || 0) }}</span>
-            </div>
-          </div>
-        </section>
+    <!-- rest of the group -->
+    <section class="panel p-4">
+      <div class="flex items-center justify-between mb-3"><h2 class="display h-md m-0">A malta</h2><span class="faint text-sm">{{ euros(totalSpent) }} gastos no total</span></div>
+      <div class="flex flex-col">
+        <div v-for="m in [...crew.members.value].sort((a, b) => (ledger.balances.value[a.user_id] || 0) - (ledger.balances.value[b.user_id] || 0))" :key="m.user_id" class="bal-row">
+          <Avatar :name="m.name" :color="m.color" :size="34" />
+          <span class="flex-1 font-semibold truncate">{{ crew.nameOf(m.user_id) }}
+            <span v-if="ledger.topDebtor.value === m.user_id" class="tag fill-coral ml-1">Caloteiro-mor</span>
+          </span>
+          <span class="num" :class="(ledger.balances.value[m.user_id] || 0) > 0.004 ? 't-lime' : (ledger.balances.value[m.user_id] || 0) < -0.004 ? 't-coral' : 'faint'">{{ euros(ledger.balances.value[m.user_id] || 0) }}</span>
+        </div>
       </div>
+      <template v-if="others.length">
+        <hr class="divider my-3">
+        <p class="kicker m-0 mb-2">Entre os outros</p>
+        <p v-for="t in others" :key="t.from + t.to" class="other-line"><b>{{ crew.nameOf(t.from) }}</b> <ArrowRight :size="13" class="inline" /> <b>{{ crew.nameOf(t.to) }}</b> <span class="num ml-auto">{{ euros(t.amount) }}</span></p>
+      </template>
+    </section>
 
-      <section class="surface-card mt-4">
-        <h2 class="surface-title">Histórico</h2>
-        <div v-if="!history.length" class="empty-inline">Ainda não há movimentos. Quem pagou o último jantar? 👀</div>
-        <div class="stack-list">
-          <div v-for="h in history" :key="h.kind + h.id" class="list-row">
-            <span class="quick-icon" :class="h.kind === 'expense' ? 'purple' : 'green'"><Receipt v-if="h.kind === 'expense'" :size="15"/><HandCoins v-else :size="15"/></span>
-            <div class="list-row-main">
-              <template v-if="h.kind === 'expense'">
-                <strong>{{ h.row.description }}</strong>
-                <small>{{ nameOf(h.row.paid_by) }} pagou · dividido por {{ sharesOf(h.id).length }} · {{ new Date(h.at).toLocaleDateString('pt-PT') }}</small>
-              </template>
-              <template v-else>
-                <strong>{{ nameOf(h.row.payer_id) }} pagou a {{ nameOf(h.row.payee_id) }}</strong>
-                <small>Acerto · {{ new Date(h.at).toLocaleDateString('pt-PT') }}</small>
-              </template>
-            </div>
-            <strong class="tabular-nums text-[12px]">{{ euros(Number(h.row.amount)) }}</strong>
-            <button v-if="canDelete(h.row)" class="icon-button small" title="Apagar" @click="removeRow(h.kind, h.id)"><Trash2 :size="13"/></button>
+    <!-- history -->
+    <section>
+      <h2 class="display h-md">Histórico</h2>
+      <div v-if="!history.length" class="empty"><p class="display">Nada registado.</p><p class="muted m-0">Quem pagou o último jantar?</p></div>
+      <TransitionGroup name="list" tag="div" class="flex flex-col relative">
+        <div v-for="h in history" :key="h.kind + h.id" class="hist">
+          <span class="hist-icon" :class="h.kind === 'expense' ? 'fill-paper' : 'fill-mint'"><Receipt v-if="h.kind === 'expense'" :size="16" /><HandCoins v-else :size="16" /></span>
+          <div class="flex-1 min-w-0">
+            <strong class="block truncate">{{ h.kind === 'expense' ? h.row.description : `${crew.nameOf(h.row.payer_id)} pagou a ${crew.nameOf(h.row.payee_id)}` }}</strong>
+            <small class="faint">{{ h.kind === 'expense' ? `${crew.nameOf(h.row.paid_by)} pagou · ÷${splitCount(h.id)}` : 'Acerto' }} · {{ ago(h.at) }}</small>
+          </div>
+          <span class="num">{{ euros(Number(h.row.amount)) }}</span>
+          <button v-if="h.row.created_by === myId || h.row.paid_by === myId" class="icon-btn icon-sm" aria-label="Apagar" @click="remove(h.kind, h.id)"><Trash2 :size="14" /></button>
+        </div>
+      </TransitionGroup>
+    </section>
+
+    <Sheet :open="adding" kicker="The Tab" title="Nova despesa" @close="adding = false">
+      <div class="flex flex-col gap-5">
+        <div class="amount-wrap">
+          <input v-model.number="amount" class="amount" :style="{ width: (String(amount ?? 0).length + .4) + 'ch' }" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0" aria-label="Valor">
+          <span class="amount-eur display">€</span>
+        </div>
+        <div>
+          <input v-model="desc" class="field" maxlength="120" placeholder="Em quê?">
+          <div class="flex gap-2 flex-wrap mt-2"><button v-for="p in presets" :key="p" class="chip" :class="{ on: desc === p }" @click="desc = p">{{ p }}</button></div>
+        </div>
+        <div>
+          <span class="label">Quem pagou</span>
+          <div class="people">
+            <button v-for="m in crew.members.value" :key="m.user_id" class="person" :class="{ on: paidBy === m.user_id }" @click="paidBy = m.user_id">
+              <Avatar :name="crew.nameOf(m.user_id)" :color="m.color" :size="40" /><small>{{ crew.nameOf(m.user_id) }}</small>
+            </button>
           </div>
         </div>
-      </section>
-    </template>
-
-    <div v-if="showExpense" class="modal-backdrop" @click.self="showExpense = false">
-      <section class="modal-card">
-        <div class="modal-heading"><div><span class="eyebrow">NOVA DESPESA</span><h2>Quem pagou o quê?</h2></div><button class="icon-button" @click="showExpense = false"><X :size="18"/></button></div>
-        <form class="stack-form flex flex-col gap-3" @submit.prevent="addExpense">
-          <label>Descrição<input v-model="description" class="field" maxlength="120" placeholder="Jantar de sábado, gasolina, Steam sale…" required></label>
-          <div class="form-grid">
-            <label>Valor total (€)<input v-model.number="amount" class="field" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" placeholder="0,00" required></label>
-            <label>Quem pagou<select v-model="paidBy" class="field"><option v-for="m in members" :key="m.user_id" :value="m.user_id">{{ nameOf(m.user_id) }}</option></select></label>
+        <div>
+          <div class="flex items-center justify-between"><span class="label">Dividir por</span><button class="text-sm font-bold t-lime" @click="who = who.length === crew.members.value.length ? [] : crew.members.value.map(m => m.user_id)">{{ who.length === crew.members.value.length ? 'Ninguém' : 'Todos' }}</button></div>
+          <div class="people">
+            <button v-for="m in crew.members.value" :key="m.user_id" class="person" :class="{ on: who.includes(m.user_id) }" @click="toggleWho(m.user_id)">
+              <Avatar :name="crew.nameOf(m.user_id)" :color="m.color" :size="40" /><small>{{ crew.nameOf(m.user_id) }}</small>
+            </button>
           </div>
-          <div>
-            <div class="flex items-center justify-between"><span class="text-[10px] font-bold text-[#a7adbc]">Dividir entre</span><button type="button" class="text-link" @click="toggleAll">{{ participants.length === members.length ? 'Ninguém' : 'Todos' }}</button></div>
-            <div class="chip-grid">
-              <label v-for="m in members" :key="m.user_id" class="person-chip" :class="{ on: participants.includes(m.user_id) }">
-                <input v-model="participants" type="checkbox" :value="m.user_id" class="sr-only">{{ nameOf(m.user_id) }}
-              </label>
-            </div>
-          </div>
-          <p v-if="perPerson" class="text-[11px] text-[#c5b7ff]">≈ {{ euros(perPerson) }} por pessoa</p>
-          <p v-if="error" class="form-error">{{ error }}</p>
-          <button class="primary-button" :disabled="saving">{{ saving ? 'A guardar…' : 'Guardar despesa' }}</button>
-        </form>
-      </section>
-    </div>
+        </div>
+        <p v-if="each" class="each"><span class="num text-2xl">{{ euros(each) }}</span> <span class="muted">por pessoa</span></p>
+        <button class="btn btn-primary btn-block" :disabled="saving || !desc.trim() || !amount || !who.length" @click="addExpense">{{ saving ? 'A guardar…' : 'Registar' }}</button>
+      </div>
+    </Sheet>
   </div>
 </template>
 
 <style scoped>
-.tab-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;margin-top:14px}
-.stat-card small{display:block;margin-top:5px;color:#747c8e;font-size:10px}
-.hero-balance.pos strong,.pos{color:#7ce0b5}
-.hero-balance.neg strong,.neg{color:#fda4af}
-.transfer-row,.balance-row{display:flex;align-items:center;gap:10px;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#151821;font-size:12px}
-.transfer-row.mine{border-color:#9b83ff40;background:#9b83ff0c}
-.transfer-main{flex:1;min-width:0}
-.transfer-main strong{display:block;font-size:12px}
-.transfer-main small{display:block;margin-top:3px;color:#8b92a2;font-size:10px}
-.transfer-amount{font-variant-numeric:tabular-nums;font-size:13px}
-.chip-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.person-chip{padding:7px 11px;border:1px solid var(--line);border-radius:99px;color:#8a90a1;font-size:11px;cursor:pointer;user-select:none}
-.person-chip.on{border-color:#9b83ff66;background:#9b83ff1c;color:#d4caff}
-.modal-card .field{font-size:16px}
-@media(max-width:800px){.tab-grid{grid-template-columns:1fr}}
+.tab { display: flex; flex-direction: column; gap: 22px; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-top: 8px; }
+.page-head h1 { margin: 4px 0 0; }
+.fill-paper { background: var(--paper); color: var(--on-color); }
+.balance { padding: 22px; transform: rotate(-1deg); animation: pop-in var(--slow) var(--ease-spring) both; }
+.balance-k { color: #0c0c0ea6; }
+.balance-n { margin: 6px 0 0; font-size: clamp(54px, 17vw, 84px); }
+.balance-sub { margin: 6px 0 0; font-weight: 600; opacity: .75; }
+.btn-inkish { background: var(--ink); color: var(--paper); border-color: #000; }
+.ticket { display: flex; align-items: center; gap: 12px; padding: 14px; border: 2px solid #000; border-radius: var(--r-md); background: var(--ink-2); box-shadow: 4px 4px 0 #000; }
+.ticket.owe { box-shadow: 4px 4px 0 var(--coral); }
+.ticket.get { box-shadow: 4px 4px 0 var(--lime); }
+.ticket-n { font-size: 26px; }
+.ticket.owe .ticket-n { color: var(--coral); }
+.ticket.get .ticket-n { color: var(--lime); }
+.bal-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; }
+.other-line { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-size: 14px; }
+.hist { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1.5px solid var(--line); }
+.hist-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 2px solid #000; border-radius: 12px; }
+.icon-sm { width: 32px; height: 32px; border-color: transparent; background: transparent; color: var(--faint); }
+.amount-wrap { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
+.amount { min-width: 1.4ch; max-width: 80%; border: 0; background: transparent; color: var(--paper); text-align: right; font-family: var(--font-display); font-size: 72px; font-weight: 800; letter-spacing: -.04em; outline: 0; -moz-appearance: textfield; }
+.amount::-webkit-outer-spin-button, .amount::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.amount::placeholder { color: var(--line-strong); }
+.amount-eur { font-size: 48px; color: var(--lime); }
+.people { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 6px; scrollbar-width: none; }
+.person { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 64px; flex: none; padding: 6px 0; border: 0; border-radius: 14px; background: none; opacity: .4; transition: opacity var(--fast), transform var(--fast) var(--ease-spring); }
+.person small { max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 12px; }
+.person.on { opacity: 1; transform: translateY(-2px); }
+.person.on :deep(.av) { box-shadow: 0 0 0 2.5px var(--ink-2), 0 0 0 4.5px var(--lime); }
+.each { margin: 0; text-align: center; }
 </style>

@@ -1,131 +1,150 @@
 <script setup lang="ts">
-import { Users, Copy, Check, ShieldCheck, UserPlus, LoaderCircle, Share2, MessageSquare } from 'lucide-vue-next'
+import { UserPlus, Share2, Copy, Check, MessageSquare, ChevronDown, Crown } from 'lucide-vue-next'
 definePageMeta({ middleware: 'auth' })
+
 const supabase = useSupabaseClient()
-const user = useMe()
+const me = useMe()
 const community = useCommunity()
-const members = ref<any[]>([])
-const group = ref<any>(null)
-const loading = ref(false)
-const isOwner = computed(() => !!user.value && group.value?.owner_id === user.value.id)
-const error = ref('')
-const success = ref('')
+const crew = useCrew()
+const ledger = useLedger()
+const toast = useToast()
+
+const stats = ref<Record<string, { posts: number; plans: number; lobbies: number }>>({})
 const invite = ref('')
 const copied = ref(false)
-
+const showDiscord = ref(false)
 const webhook = ref('')
-const savingDiscord = ref(false)
+const savingHook = ref(false)
+
+type Badge = { label: string; color: string }
+const badges = computed(() => {
+  const out: Record<string, Badge[]> = {}
+  const add = (id: string | null, b: Badge) => { if (id) (out[id] ||= []).push(b) }
+  const top = (k: 'posts' | 'plans' | 'lobbies') => {
+    let best: string | null = null, n = 0
+    for (const [id, s] of Object.entries(stats.value)) if (s[k] > n) { best = id; n = s[k] }
+    return best
+  }
+  add(top('plans'), { label: 'Organizador', color: 'coral' })
+  add(top('posts'), { label: 'Influencer', color: 'pink' })
+  add(top('lobbies'), { label: 'Gamer', color: 'sky' })
+  add(ledger.topDebtor.value, { label: 'Caloteiro-mor', color: 'sun' })
+  for (const m of crew.members.value) if (Date.now() - new Date(m.joined_at).getTime() < 7 * 86400000) add(m.user_id, { label: 'Novato', color: 'mint' })
+  return out
+})
 
 async function load() {
-  if (!community.value) { members.value = []; group.value = null; return }
-  loading.value = true; error.value = ''; invite.value = ''
-  const [groupResult, memberResult] = await Promise.all([
-    supabase.from('groups').select('id,name,owner_id,created_at').eq('id', community.value).maybeSingle(),
-    supabase.from('group_members').select('user_id,role,joined_at').eq('group_id', community.value).order('joined_at', { ascending: true }),
+  if (!community.value) return
+  await crew.loadMembers(true)
+  ledger.load()
+  const [p, e, l] = await Promise.all([
+    supabase.from('posts').select('author_id').eq('group_id', community.value),
+    supabase.from('events').select('created_by').eq('group_id', community.value),
+    supabase.from('game_calls').select('created_by').eq('group_id', community.value),
   ])
-  if (groupResult.error) error.value = groupResult.error.message
-  if (memberResult.error) error.value = memberResult.error.message
-  group.value = groupResult.data
-  const ids = (memberResult.data || []).map(m => m.user_id)
-  const { data: people } = ids.length ? await supabase.from('profiles').select('id,display_name').in('id', ids) : { data: [] }
-  members.value = (memberResult.data || []).map(m => ({ ...m, display_name: people?.find(p => p.id === m.user_id)?.display_name || 'Membro' }))
-  if (isOwner.value) {
+  const s: typeof stats.value = {}
+  const bump = (id: string, k: 'posts' | 'plans' | 'lobbies') => { (s[id] ||= { posts: 0, plans: 0, lobbies: 0 })[k]++ }
+  for (const r of p.data || []) bump(r.author_id, 'posts')
+  for (const r of e.data || []) bump(r.created_by, 'plans')
+  for (const r of l.data || []) bump(r.created_by, 'lobbies')
+  stats.value = s
+  if (crew.isOwner.value) {
     const { data } = await supabase.from('group_integrations').select('discord_webhook_url').eq('group_id', community.value).maybeSingle()
     webhook.value = data?.discord_webhook_url || ''
   }
-  loading.value = false
 }
 
-async function createInvite() {
-  if (!community.value) return
-  const { data, error: e } = await supabase.rpc('create_group_invite', { p_group: community.value })
-  if (e) { error.value = e.message; return }
+async function makeInvite() {
+  const { data, error } = await supabase.rpc('create_group_invite', { p_group: community.value })
+  if (error) return toast.error(error.message)
   invite.value = `${window.location.origin}/join?token=${data}`
 }
-async function copy() { await navigator.clipboard.writeText(invite.value); copied.value = true; setTimeout(() => copied.value = false, 1600) }
-async function shareInvite() {
-  await shareOut(`Junta-te à malta no Afterhours 🌙 (${group.value?.name})`, invite.value.replace(window.location.origin, ''))
-}
+async function copy() { await navigator.clipboard.writeText(invite.value); copied.value = true; setTimeout(() => (copied.value = false), 1500) }
+function shareInvite() { shareOut(`Entra na malta "${crew.group.value?.name}" no Afterhours 🌙`, invite.value.replace(window.location.origin, '')) }
 
 async function saveDiscord() {
-  if (!community.value) return
-  savingDiscord.value = true; error.value = ''; success.value = ''
-  const { error: e } = await supabase.from('group_integrations').upsert({
-    group_id: community.value,
-    discord_webhook_url: webhook.value.trim() || null,
-    app_url: window.location.origin,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'group_id' })
-  savingDiscord.value = false
-  if (e) { error.value = e.message.includes('check constraint') ? 'Esse link não parece um webhook do Discord. Deve começar por https://discord.com/api/webhooks/' : e.message; return }
-  success.value = webhook.value.trim() ? 'Discord ligado! Novos planos, clips e despesas vão aparecer no canal.' : 'Discord desligado.'
+  savingHook.value = true
+  const { error } = await supabase.from('group_integrations').upsert({ group_id: community.value, discord_webhook_url: webhook.value.trim() || null, app_url: window.location.origin, updated_at: new Date().toISOString() }, { onConflict: 'group_id' })
+  savingHook.value = false
+  if (error) return toast.error(error.message.includes('check constraint') ? 'Isso não é um webhook do Discord.' : error.message)
+  toast.ok(webhook.value.trim() ? 'Discord ligado!' : 'Discord desligado')
 }
 
 watch(community, load)
-watch(() => user.value?.id, load)
 onMounted(load)
 </script>
 
 <template>
-  <div class="content-page">
-    <header class="content-header">
-      <div><span class="eyebrow"><Users :size="13"/> A MALTA</span><h1>{{ group?.name || 'A tua comunidade' }}<span class="accent-dot">.</span></h1><p>Círculo pequeno. Muita lore.</p></div>
-      <button v-if="isOwner" class="primary-button" @click="createInvite"><UserPlus :size="15"/> Convidar</button>
+  <div class="malta">
+    <header class="pt-2">
+      <p class="kicker">A malta · {{ crew.members.value.length }}</p>
+      <h1 class="display h-xl crew-name">{{ crew.group.value?.name }}<span class="t-lime">.</span></h1>
     </header>
-    <p v-if="error" class="notice error-notice">{{ error }}</p>
-    <p v-if="success" class="notice success-notice">{{ success }}</p>
 
-    <section v-if="invite" class="invite-panel surface-card">
-      <div class="min-w-0"><strong>Link de convite criado</strong><p class="text-muted">Válido 7 dias, até 10 pessoas. Quem abrir entra logo (depois de criar conta).</p><code>{{ invite }}</code></div>
-      <div class="flex gap-2">
-        <button class="primary-button" @click="shareInvite"><Share2 :size="14"/> Enviar</button>
-        <button class="secondary-button flex items-center gap-1" @click="copy"><component :is="copied ? Check : Copy" :size="13"/> {{ copied ? 'Copiado' : 'Copiar' }}</button>
+    <!-- invite -->
+    <section v-if="crew.isOwner.value" class="invite sticker fill-lime">
+      <div v-if="!invite" class="flex items-center gap-4">
+        <div class="flex-1"><p class="display h-md m-0">Falta alguém?</p><p class="m-0 mt-1 font-semibold opacity-75">Um link, um toque, estão dentro.</p></div>
+        <button class="btn btn-ink" @click="makeInvite"><UserPlus :size="17" /> Convidar</button>
+      </div>
+      <div v-else class="flex flex-col gap-3">
+        <p class="display h-md m-0">Link pronto.</p>
+        <code class="invite-link">{{ invite }}</code>
+        <div class="flex gap-2">
+          <button class="btn btn-ink flex-1" @click="shareInvite"><Share2 :size="16" /> Enviar no WhatsApp</button>
+          <button class="btn btn-ink" :aria-label="copied ? 'Copiado' : 'Copiar'" @click="copy"><component :is="copied ? Check : Copy" :size="16" /></button>
+        </div>
+        <p class="text-xs font-semibold opacity-70 m-0">Válido 7 dias, até 10 pessoas.</p>
+      </div>
+    </section>
+    <p v-else class="muted">Só o dono da comunidade pode gerar convites.</p>
+
+    <!-- members -->
+    <section class="stagger flex flex-col">
+      <div v-for="m in crew.members.value" :key="m.user_id" class="member">
+        <Avatar :name="m.name" :color="m.color" :vibe="m.vibe" :size="52" />
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2"><strong class="truncate text-lg">{{ m.name }}</strong><Crown v-if="m.role === 'owner'" :size="15" class="t-lime" /><span v-if="m.user_id === me?.id" class="faint text-sm">(tu)</span></div>
+          <p v-if="m.vibe" class="m-0 text-sm"><span class="tag" :class="`fill-${VIBES[m.vibe].color}`">{{ VIBES[m.vibe].label }}</span><span v-if="m.vibe_note" class="muted ml-2">{{ m.vibe_note }}</span></p>
+          <div class="flex flex-wrap gap-1 mt-2">
+            <span v-for="b in badges[m.user_id] || []" :key="b.label" class="tag badge" :class="`fill-${b.color}`">{{ b.label }}</span>
+          </div>
+        </div>
+        <div class="stat-col">
+          <span><b class="num">{{ stats[m.user_id]?.posts || 0 }}</b> posts</span>
+          <span><b class="num">{{ stats[m.user_id]?.plans || 0 }}</b> planos</span>
+        </div>
       </div>
     </section>
 
-    <div class="community-content">
-      <section class="surface-card">
-        <div class="section-head"><h2 class="surface-title">Membros</h2><span class="pill">{{ members.length }}</span></div>
-        <div v-if="loading" class="loading-state"><LoaderCircle class="spin"/> A carregar…</div>
-        <div v-else class="member-grid">
-          <article v-for="member in members" :key="member.user_id" class="member-card">
-            <span class="avatar member-avatar">{{ member.display_name.slice(0,1).toUpperCase() }}</span>
-            <div><strong>{{ member.display_name }} <span v-if="member.user_id === user?.id" class="you-tag">TU</span></strong><small>{{ member.role === 'owner' ? 'Dono da comunidade' : 'Membro' }}</small></div>
-            <ShieldCheck v-if="member.role === 'owner'" :size="15" class="owner-icon"/>
-          </article>
+    <!-- discord -->
+    <section v-if="crew.isOwner.value" class="panel">
+      <button class="discord-toggle" @click="showDiscord = !showDiscord">
+        <MessageSquare :size="18" class="t-sky" />
+        <span class="flex-1 text-left"><b>Discord</b> <span class="muted text-sm">{{ webhook ? '· ligado' : '· desligado' }}</span></span>
+        <ChevronDown :size="18" :style="{ transform: showDiscord ? 'rotate(180deg)' : '', transition: 'transform 200ms' }" />
+      </button>
+      <Transition name="fade">
+        <div v-if="showDiscord" class="px-4 pb-4 flex flex-col gap-3">
+          <p class="muted text-sm m-0">No Discord: <b class="text-[var(--paper)]">Editar canal → Integrações → Webhooks → Novo → Copiar URL</b>. O canal recebe planos, lobbies, clips e despesas.</p>
+          <input v-model="webhook" class="field" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
+          <button class="btn btn-ghost" :disabled="savingHook" @click="saveDiscord">{{ savingHook ? 'A guardar…' : 'Guardar' }}</button>
         </div>
-      </section>
-
-      <aside class="flex flex-col gap-3">
-        <section class="surface-card community-side">
-          <span class="eyebrow"><MessageSquare :size="12"/> DISCORD</span>
-          <h3>Avisos no vosso servidor.</h3>
-          <template v-if="isOwner">
-            <p>No Discord: <b>Editar canal → Integrações → Webhooks → Novo webhook → Copiar URL</b>. Cola aqui e o Afterhours avisa quando há planos, clips ou despesas novas.</p>
-            <form @submit.prevent="saveDiscord">
-              <input v-model="webhook" class="field" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
-              <button class="secondary-button w-full mt-2" :disabled="savingDiscord">{{ savingDiscord ? 'A guardar…' : webhook ? 'Guardar' : 'Desligar' }}</button>
-            </form>
-          </template>
-          <p v-else>Só o dono da comunidade pode ligar o Discord.</p>
-        </section>
-        <section class="surface-card community-side">
-          <span class="eyebrow">CONVITES</span>
-          <h3>Traz o resto da malta.</h3>
-          <p v-if="isOwner">Gera um link e manda no grupo do WhatsApp. Um toque e estão dentro.</p>
-          <button v-if="isOwner" class="secondary-button w-full" @click="createInvite"><UserPlus :size="14"/> Gerar link</button>
-          <p v-else>Pede ao dono da comunidade para gerar um link.</p>
-        </section>
-      </aside>
-    </div>
+      </Transition>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.invite-panel{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:16px}.invite-panel strong{font-size:12px}.invite-panel p{margin:4px 0 7px;font-size:10px}.invite-panel code{color:#b8a6ff;font-size:10px;overflow-wrap:anywhere}
-.community-content{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px}
-.member-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:15px}.member-card{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#11141b}.member-avatar{width:34px;height:34px}.member-card>div{min-width:0;flex:1}.member-card strong,.member-card small{display:block}.member-card strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.member-card small{margin-top:3px;color:#747c8d;font-size:9px}.owner-icon{color:#b6a4ff}
-.community-side{background:radial-gradient(circle at 100% 0%,#8d75f020,transparent 45%),#171a23}.community-side h3{margin:10px 0 8px;font-family:'Space Grotesk';font-size:17px;line-height:1.15}.community-side p{margin:0 0 12px;color:#81899a;font-size:11px;line-height:1.6}.community-side p b{color:#c5b7ff;font-weight:600}.community-side button{display:flex;align-items:center;justify-content:center;gap:7px}.community-side .field{font-size:16px;margin-top:0}
-@media(max-width:800px){.community-content{grid-template-columns:1fr}.invite-panel{align-items:flex-start;flex-direction:column}}
-@media(max-width:420px){.member-grid{grid-template-columns:1fr}}
+.malta { display: flex; flex-direction: column; gap: 22px; }
+.crew-name { margin: 6px 0 0; overflow-wrap: anywhere; }
+.invite { padding: 20px; transform: rotate(-.8deg); }
+.btn-ink { background: var(--ink); color: var(--paper); border-color: #000; }
+.invite-link { display: block; padding: 10px 12px; border: 2px solid #000; border-radius: 12px; background: #ffffff66; font-size: 12px; overflow-wrap: anywhere; }
+.member { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1.5px solid var(--line); }
+.badge { border: 1.5px solid #000; transform: rotate(-2deg); }
+.badge:nth-child(even) { transform: rotate(2deg); }
+.stat-col { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.stat-col b { color: var(--paper); font-size: 15px; }
+.discord-toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; background: none; border: 0; }
 </style>

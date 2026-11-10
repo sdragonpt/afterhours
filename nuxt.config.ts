@@ -5,12 +5,13 @@ export default defineNuxtConfig({
   // We handle auth redirects ourselves (middleware/auth.ts) so invite links survive the login step.
   supabase: { redirect: false },
   app: {
+    pageTransition: { name: 'page', mode: 'out-in' },
     head: {
       title: 'Afterhours',
       htmlAttrs: { lang: 'pt-PT' },
       meta: [
         { name: 'viewport', content: 'width=device-width,initial-scale=1,viewport-fit=cover' },
-        { name: 'theme-color', content: '#0b0c10' },
+        { name: 'theme-color', content: '#0c0c0e' },
         // iPhone "Adicionar ao ecrã principal" → opens fullscreen like a native app
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'mobile-web-app-capable', content: 'yes' },

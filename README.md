@@ -1,53 +1,25 @@
-# Afterhours v0.5
+# Afterhours v1.0
 
-Rede social privada para a malta — Nuxt 4, Vue 3, Tailwind CSS e Supabase. Web app instalável no iPhone (PWA), sem App Store.
+Rede social privada para a malta: planos, gaming, contas e vibes. Nuxt 4 + Supabase, instalável no iPhone (PWA).
+Online em https://afterhours-malta.netlify.app (deploy automático a cada push para `main`).
 
-## Novidades na v0.5
+## O que tem
+- **Hoje** — saudação, vibes da malta ("Bora sair", "A jogar", "Fome"…), próximo plano em contagem decrescente, saldo do Tab, feed com várias reações por post e sondagens.
+- **Planos ("Bora?")** — pósteres com confirmação "Tô dentro / Talvez / Não dá", atalhos de data, mapa, partilha para WhatsApp.
+- **Gaming ("Quem joga?")** — lobbies com lugares (CS2 às 22h — 3/5), clip da semana, biblioteca de clips por jogo.
+- **The Tab** — quem paga a quem com o mínimo de transferências, "Paguei/Recebi" com confetti, badge "Caloteiro-mor", lembrete no Discord.
+- **Malta** — membros, vibes, badges (Organizador, Influencer, Gamer, Novato), convites e ligação ao Discord.
+- Botão **+** central para criar qualquer coisa; animações respeitam "Reduzir movimento".
 
-**Bug crítico corrigido** — o `@nuxtjs/supabase` v2 guarda as *claims* do JWT em `useSupabaseUser()`, não o objeto `User`. O id está em `sub`, por isso `user.value.id` era sempre `undefined` (posts, perfil, reações, despesas e convites falhavam). Agora usa-se `useMe()` (`app/composables/useMe.ts`), que devolve `{ id, email }`.
+## Design
+"Flyer de noite": fundo tinta, verde-lima para ações, coral para dívidas, azul-céu para gaming, autocolantes com sombra dura, tipografia Bricolage Grotesque. Tokens em `app/assets/css/main.css`.
 
-**The Tab v2**
-- "Quem paga a quem" com o mínimo de transferências (`app/utils/settle.ts`).
-- Qualquer membro pode ser quem pagou ("o João pagou o jantar").
-- "Marcar como pago" num toque, por quem deve ou por quem recebe.
-- Apagar despesas/pagamentos registados por engano.
-- Divisão ao cêntimo justa (os cêntimos que sobram são distribuídos, não vão todos para um).
-- Partilhar o resumo das dívidas no WhatsApp e "Lembrar no Discord".
+## Desenvolvimento
+1. `cp .env.example .env` e preenche `SUPABASE_URL` e `SUPABASE_KEY` (chave publicável).
+2. `npm install` → `npm run dev`.
 
-**Discord e WhatsApp**
-- Notificações automáticas num canal do Discord através de um **webhook** (sem bot, sem servidor): novos planos, clips, despesas e acertos. O próprio Postgres envia o pedido (`pg_net`).
-- Botão "Partilhar" nos planos, no The Tab e nos convites. No iPhone abre a folha de partilha nativa (WhatsApp, Discord, Mensagens…); no PC abre o WhatsApp Web.
+## Base de dados (Supabase → SQL Editor, por ordem, uma vez cada)
+`database/schema.sql` → `migrations/003` → `004` → `005` → `006` → `007`.
 
-**Convites que funcionam** — um amigo sem conta abre o link → cria conta → entra logo na comunidade (antes o token perdia-se no login).
-
-**PWA** — manifest, ícones e meta tags para "Adicionar ao ecrã principal" no iPhone, e preview de links no WhatsApp/Discord.
-
-## Instalação
-
-1. `cp .env.example .env` e preenche `SUPABASE_URL` e `SUPABASE_KEY` (publishable/anon). Nunca ponhas a service role key no browser.
-2. `npm install`
-3. No Supabase → SQL Editor, corre **por esta ordem** (cada um uma vez):
-   - Projeto novo: `database/schema.sql` → `migrations/003_…` → `004_…` → `005_…` → `006_…`
-   - Já tens a v0.4: `004_…` (se ainda não correu), `005_…` e `006_…`
-4. `npm run dev` → http://localhost:3000
-
-> Se criares conta e o Supabase pedir confirmação por email, em **Authentication → URL Configuration** adiciona `http://localhost:3000/**` (e o domínio final) aos *Redirect URLs*.
-
-## Ligar o Discord
-
-1. No Discord: **Editar canal → Integrações → Webhooks → Novo webhook → Copiar URL do webhook**.
-2. Na app, como dono da comunidade: **Malta → Discord** → cola o URL → Guardar.
-3. O link nos avisos aponta para o domínio onde guardaste (por isso guarda-o já no domínio final depois do deploy).
-
-## No iPhone
-
-Abrir o site no **Safari → Partilhar → Adicionar ao ecrã principal**. Abre em ecrã inteiro como uma app.
-
-## Deploy
-
-Vercel ou Netlify funcionam diretamente com Nuxt. Define `SUPABASE_URL` e `SUPABASE_KEY` nas variáveis de ambiente do projeto.
-
-## Tipos da base de dados
-
-`app/types/database.types.ts` tem um placeholder (`any`). Para tipos reais:
-`npx supabase gen types typescript --project-id <id> > app/types/database.types.ts`
+## Discord
+Dono da comunidade: **Malta → Discord** → cola o URL de um webhook do canal. Planos, lobbies, clips e despesas novas aparecem lá.

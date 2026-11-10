@@ -8,6 +8,7 @@ const password = ref('')
 const mode = ref<'login' | 'signup'>('login')
 const busy = ref(false)
 const message = ref('')
+const sent = ref(false)
 
 // Only allow internal redirects (e.g. /join?token=...) to avoid open redirects.
 const redirectTo = computed(() => {
@@ -32,46 +33,61 @@ async function submit() {
         options: { emailRedirectTo: `${window.location.origin}${redirectTo.value}` },
       })
       if (error) throw error
-      if (!data.session) { message.value = 'Conta criada! Confirma o email e volta a abrir o link.'; return }
+      if (!data.session) { sent.value = true; return }
     }
     await navigateTo(redirectTo.value, { replace: true })
   } catch (e: any) {
-    message.value = e.message === 'Invalid login credentials' ? 'Email ou password errados.' : (e.message ?? 'Ocorreu um erro.')
+    message.value = e.message === 'Invalid login credentials' ? 'Email ou password errados.' : e.message === 'User already registered' ? 'Já tens conta. Entra em vez disso.' : (e.message ?? 'Ocorreu um erro.')
   } finally { busy.value = false }
 }
 </script>
 
 <template>
-  <main class="auth-page">
-    <section class="auth-card">
-      <span class="brand-mark">A<span>.</span></span>
-      <p class="eyebrow mt-6">YOUR PEOPLE. YOUR WORLD.</p>
-      <h1 class="auth-title">AFTERHOURS<span class="accent-dot">.</span></h1>
-      <p v-if="isInvite" class="notice success-notice mt-3">Foste convidado para uma comunidade. Cria conta (ou entra) para aceitar.</p>
-      <p v-else class="page-subtitle mt-2">A tua malta, fora do horário.</p>
+  <main class="auth">
+    <div class="poster-stack" aria-hidden="true">
+      <span class="chip-deco fill-coral" style="--r:-8deg;top:8%;left:-4%">Bora sair</span>
+      <span class="chip-deco fill-sky" style="--r:6deg;top:14%;right:-6%">CS às 22h?</span>
+      <span class="chip-deco fill-sun" style="--r:-4deg;bottom:22%;right:-2%">Deves 12€</span>
+      <span class="chip-deco fill-pink" style="--r:7deg;bottom:30%;left:-6%">🔥 4</span>
+    </div>
 
-      <div class="auth-tabs">
-        <button :class="{ selected: mode === 'login' }" type="button" @click="mode = 'login'">Entrar</button>
-        <button :class="{ selected: mode === 'signup' }" type="button" @click="mode = 'signup'">Criar conta</button>
+    <section class="auth-inner">
+      <h1 class="display wordmark">after<br>hours<span class="t-lime">.</span></h1>
+      <p class="tagline">A tua malta. Os vossos planos, clips e contas, num só sítio.</p>
+
+      <div v-if="sent" class="card sticker fill-lime">
+        <p class="display h-md m-0">Vê o teu email.</p>
+        <p class="m-0 mt-2 font-semibold">Mandámos um link para <b>{{ email }}</b>. Abre-o neste telemóvel e entras logo{{ isInvite ? ' na comunidade' : '' }}.</p>
       </div>
 
-      <form class="stack-form" @submit.prevent="submit">
-        <label>Email<input v-model="email" class="field" type="email" required autocomplete="email" placeholder="tu@exemplo.com"></label>
-        <label class="mt-3">Password<input v-model="password" class="field" type="password" minlength="6" required :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" placeholder="Mínimo 6 caracteres"></label>
-        <button class="primary-button mt-5" :disabled="busy">{{ busy ? 'Aguarda…' : mode === 'login' ? 'Entrar' : 'Criar conta' }}</button>
+      <form v-else class="card panel" @submit.prevent="submit">
+        <p v-if="isInvite" class="invite-note fill-lime">Foste convidado. Cria conta para entrar.</p>
+        <div class="seg">
+          <button type="button" :class="{ on: mode === 'login' }" @click="mode = 'login'">Entrar</button>
+          <button type="button" :class="{ on: mode === 'signup' }" @click="mode = 'signup'">Criar conta</button>
+        </div>
+        <input v-model="email" class="field" type="email" required autocomplete="email" placeholder="Email">
+        <input v-model="password" class="field" type="password" minlength="6" required :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" placeholder="Password (mín. 6)">
+        <p v-if="message" role="alert" class="err">{{ message }}</p>
+        <button class="btn btn-primary btn-block" :disabled="busy">{{ busy ? 'Aguarda…' : mode === 'login' ? 'Entrar' : 'Criar conta' }}</button>
       </form>
-      <p v-if="message" role="status" class="form-error mt-3">{{ message }}</p>
     </section>
   </main>
 </template>
 
 <style scoped>
-.auth-page{min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% -10%,rgba(106,79,214,.18),transparent 50%),var(--bg)}
-.auth-card{width:min(100%,400px);padding:28px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,#171a23,#12141b)}
-.auth-title{margin:8px 0 0;font-family:'Space Grotesk',sans-serif;font-size:32px;letter-spacing:.02em}
-.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:22px 0 18px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#0e1118}
-.auth-tabs button{padding:9px;border:0;border-radius:7px;background:transparent;color:#8a90a1;font-size:12px;font-weight:700}
-.auth-tabs button.selected{background:#a18bff20;color:#d0c5ff}
-.auth-card .stack-form label{font-size:11px}
-.auth-card .field{font-size:16px} /* 16px prevents iOS zoom on focus */
+.auth { position: relative; min-height: 100dvh; overflow: hidden; display: grid; place-items: center; padding: 24px 18px; }
+.poster-stack { position: absolute; inset: 0; pointer-events: none; }
+.chip-deco { position: absolute; padding: 10px 16px; border: 2px solid #000; border-radius: 999px; font-family: var(--font-display); font-weight: 800; font-size: 18px; box-shadow: 4px 4px 0 #000; transform: rotate(var(--r)); animation: float-in 600ms var(--ease-spring) both; opacity: .9; }
+.chip-deco:nth-child(2) { animation-delay: 80ms; } .chip-deco:nth-child(3) { animation-delay: 160ms; } .chip-deco:nth-child(4) { animation-delay: 240ms; }
+@keyframes float-in { from { opacity: 0; transform: translateY(30px) rotate(0deg) scale(.8); } }
+.auth-inner { position: relative; z-index: 1; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 18px; }
+.wordmark { margin: 0; font-size: clamp(76px, 25vw, 120px); line-height: .82; }
+.tagline { margin: 0; color: var(--muted); font-size: 17px; font-weight: 500; text-wrap: balance; }
+.card { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.invite-note { margin: 0; padding: 10px 14px; border: 2px solid #000; border-radius: 12px; font-weight: 800; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border: 1.5px solid var(--line-strong); border-radius: 999px; }
+.seg button { height: 40px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-weight: 700; transition: background-color var(--fast), color var(--fast); }
+.seg button.on { background: var(--paper); color: var(--on-color); }
+.err { margin: 0; color: var(--coral); font-weight: 700; font-size: 14px; }
 </style>
