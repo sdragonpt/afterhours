@@ -65,3 +65,22 @@ export function colorFor(id: string) {
 export const posterColor = (i: number) => ['coral', 'lime', 'sky', 'pink', 'sun', 'mint'][i % 6]!
 
 export const capFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** local YYYY-MM-DD key for grouping by day */
+export const dayKey = (d: Date | string) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
+
+/** "sábado, 14 nov" from a day key */
+export const dayLabel = (key: string) => {
+  const [y, m, d] = key.split('-').map(Number)
+  const x = new Date(y!, m! - 1, d!)
+  const today = dayKey(new Date()); const tomorrow = dayKey(new Date(Date.now() + 86400000))
+  if (key === today) return 'Hoje'
+  if (key === tomorrow) return 'Amanhã'
+  return capFirst(x.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'short' }).replace('.', ''))
+}
+
+/** combine a day key + "HH:MM" into a Date */
+export const atDay = (key: string, hhmm: string) => {
+  const [y, m, d] = key.split('-').map(Number); const [h, mi] = hhmm.split(':').map(Number)
+  return new Date(y!, m! - 1, d!, h!, mi!, 0, 0)
+}

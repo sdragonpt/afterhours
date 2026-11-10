@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=DM+Sans:opsz,wght@9..40,400..700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -159,21 +159,21 @@ textarea.field { resize: none; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 /* ── motion utilities ─────────────────────────────────── */
-@keyframes pop-in { 0% { opacity: 0; transform: translateY(10px) scale(.96); } 100% { opacity: 1; transform: none; } }
-.stagger > * { animation: pop-in var(--slow) var(--ease-spring) both; }
-.stagger > *:nth-child(1) { animation-delay: 0ms; } .stagger > *:nth-child(2) { animation-delay: 40ms; }
-.stagger > *:nth-child(3) { animation-delay: 80ms; } .stagger > *:nth-child(4) { animation-delay: 120ms; }
-.stagger > *:nth-child(5) { animation-delay: 160ms; } .stagger > *:nth-child(n+6) { animation-delay: 200ms; }
+@keyframes pop-in { 0% { opacity: 0; transform: translateY(6px) scale(.98); } 100% { opacity: 1; transform: none; } }
+.stagger > * { animation: pop-in 220ms var(--ease-out) both; }
+.stagger > *:nth-child(1) { animation-delay: 0ms; } .stagger > *:nth-child(2) { animation-delay: 25ms; }
+.stagger > *:nth-child(3) { animation-delay: 50ms; } .stagger > *:nth-child(4) { animation-delay: 75ms; }
+.stagger > *:nth-child(5) { animation-delay: 100ms; } .stagger > *:nth-child(n+6) { animation-delay: 120ms; }
 @keyframes wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-8deg) scale(1.15); } 75% { transform: rotate(6deg) scale(1.1); } }
 .wiggle { animation: wiggle 360ms var(--ease-out); }
 @keyframes pulse-dot { 0%,100% { box-shadow: 0 0 0 0 #d4ff3a80; } 50% { box-shadow: 0 0 0 6px #d4ff3a00; } }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); animation: pulse-dot 1.8s var(--ease-out) infinite; }
 
 /* page transitions */
-.page-enter-active { transition: opacity var(--base) var(--ease-out), transform var(--base) var(--ease-out); }
-.page-leave-active { transition: opacity var(--fast) var(--ease-in), transform var(--fast) var(--ease-in); }
-.page-enter-from { opacity: 0; transform: translateY(12px); }
-.page-leave-to { opacity: 0; transform: translateY(-6px); }
+.page-enter-active { transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out); }
+.page-leave-active { transition: none; }
+.page-enter-from { opacity: 0; transform: translateY(6px); }
+.page-leave-to { opacity: 0; }
 /* list transitions */
 .list-enter-active { transition: opacity var(--base) var(--ease-out), transform var(--slow) var(--ease-spring); }
 .list-leave-active { transition: opacity var(--fast) var(--ease-in), transform var(--fast) var(--ease-in); position: absolute; }

@@ -10,10 +10,11 @@ const community = useCommunity()
 const crew = useCrew()
 const toast = useToast()
 
-const lobbies = ref<any[]>([])
-const clips = ref<any[]>([])
-const urls = ref<Record<string, string>>({})
-const loading = ref(true)
+const gaming = useGamingData()
+const lobbies = computed({ get: () => gaming.data.value.lobbies, set: (v) => { gaming.data.value = { ...gaming.data.value, lobbies: v } } })
+const clips = computed(() => gaming.data.value.clips)
+const urls = computed(() => gaming.data.value.urls)
+const loading = computed(() => !gaming.loaded.value)
 const game = ref('Todos')
 
 const games = computed(() => ['Todos', ...new Set(clips.value.map(c => c.game_title || 'Outros'))])
@@ -25,33 +26,7 @@ const clipOfWeek = computed(() => {
 })
 const recentGames = computed(() => [...new Set([...lobbies.value.map(l => l.game), ...clips.value.map(c => c.game_title).filter(Boolean), 'CS2', 'Fortnite', 'Project Zomboid', 'EA FC'])].slice(0, 6))
 
-async function load() {
-  if (!community.value) return
-  loading.value = true
-  const [calls, media] = await Promise.all([
-    supabase.from('game_calls').select('id,created_by,game,starts_at,slots').eq('group_id', community.value).gte('starts_at', new Date(Date.now() - 2 * 3600000).toISOString()).order('starts_at'),
-    supabase.from('post_media').select('id,post_id,storage_path,game_title,created_at').eq('group_id', community.value).eq('media_type', 'video').order('created_at', { ascending: false }).limit(40),
-  ])
-  if (calls.error) toast.error(calls.error.message.includes('game_calls') ? 'Falta correr a migração 007 no Supabase.' : calls.error.message)
-  const callIds = (calls.data || []).map(c => c.id)
-  const { data: players } = callIds.length ? await supabase.from('game_call_players').select('call_id,user_id,joined_at').in('call_id', callIds).order('joined_at') : { data: [] as any[] }
-  lobbies.value = (calls.data || []).map(c => ({ ...c, players: (players || []).filter((p: any) => p.call_id === c.id).map((p: any) => p.user_id) }))
-
-  const postIds = (media.data || []).map(m => m.post_id)
-  const [posts, reacts] = postIds.length ? await Promise.all([
-    supabase.from('posts').select('id,author_id,body').in('id', postIds),
-    supabase.from('post_reactions').select('post_id').in('post_id', postIds),
-  ]) : [{ data: [] }, { data: [] }] as any[]
-  clips.value = (media.data || []).map(m => {
-    const p = posts.data?.find((x: any) => x.id === m.post_id)
-    return { ...m, author_id: p?.author_id, body: p?.body, score: (reacts.data || []).filter((r: any) => r.post_id === m.post_id).length }
-  }).filter(c => c.author_id)
-  if (clips.value.length) {
-    const { data: signed } = await supabase.storage.from('community-media').createSignedUrls(clips.value.map(c => c.storage_path), 3600)
-    for (const s of signed || []) { const c = clips.value.find(x => x.storage_path === s.path); if (c && s.signedUrl) urls.value[c.id] = s.signedUrl }
-  }
-  loading.value = false
-}
+const load = () => gaming.refresh()
 
 const inLobby = (l: any) => l.players.includes(me.value?.id)
 async function toggleLobby(l: any, e: MouseEvent) {

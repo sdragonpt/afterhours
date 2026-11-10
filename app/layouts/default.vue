@@ -37,11 +37,14 @@ async function boot() {
   await crew.loadGroups()
   await crew.loadMembers(true)
   ready.value = true
+  // warm every tab so switching feels instant
+  prefetchAll()
 }
 async function switchTo(id: string) {
   community.value = id
   showSwitcher.value = false
   await crew.loadMembers(true)
+  prefetchAll()
 }
 async function createCommunity() {
   if (!newName.value.trim()) return

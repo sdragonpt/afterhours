@@ -11,10 +11,12 @@ const crew = useCrew()
 const ledger = useLedger()
 const toast = useToast()
 
-const posts = ref<any[]>([])
-const mediaUrls = ref<Record<string, string>>({})
-const nextPlan = ref<any>(null)
-const loading = ref(true)
+const feed = useFeed()
+const plans = usePlans()
+const posts = computed({ get: () => feed.data.value.posts, set: (v) => { feed.data.value = { ...feed.data.value, posts: v } } })
+const mediaUrls = computed(() => feed.data.value.urls)
+const nextPlan = computed(() => plans.data.value.find((e: any) => new Date(e.starts_at).getTime() > Date.now() - 3 * 3600000) || null)
+const loading = computed(() => !feed.loaded.value)
 const filter = ref<'Tudo' | 'Gaming' | 'IRL' | 'Sondagens'>('Tudo')
 const shown = computed(() => {
   if (filter.value === 'Tudo') return posts.value
@@ -30,48 +32,9 @@ const goingIds = computed<string[]>(() => (nextPlan.value?.rsvps || []).filter((
 const myDebt = computed(() => ledger.myTransfers.value)
 
 // ── load ────────────────────────────────────────────────
-async function load() {
+function load() {
   if (!community.value || !me.value) return
-  loading.value = true
-  const [p, ev] = await Promise.all([
-    supabase.from('posts').select('id,group_id,author_id,body,category,created_at').eq('group_id', community.value).order('created_at', { ascending: false }).limit(40),
-    supabase.from('events').select('id,title,location,starts_at,created_by').eq('group_id', community.value).gte('starts_at', new Date(Date.now() - 3 * 3600000).toISOString()).order('starts_at').limit(1),
-    ledger.load(),
-  ])
-  const rows = p.data || []
-  const ids = rows.map(r => r.id)
-  const [reacts, comments, media, polls, votes] = ids.length ? await Promise.all([
-    supabase.from('post_reactions').select('post_id,user_id,reaction').in('post_id', ids),
-    supabase.from('post_comments').select('post_id').in('post_id', ids),
-    supabase.from('post_media').select('post_id,storage_path,media_type,game_title').in('post_id', ids),
-    supabase.from('post_polls').select('post_id,options').in('post_id', ids),
-    supabase.from('poll_votes').select('post_id,user_id,option_index').in('post_id', ids),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }] as any[]
-  posts.value = rows.map(r => {
-    const m = media.data?.find((x: any) => x.post_id === r.id)
-    return {
-      ...r,
-      reactions: (reacts.data || []).filter((x: any) => x.post_id === r.id),
-      comment_count: (comments.data || []).filter((x: any) => x.post_id === r.id).length,
-      media_type: m?.media_type, game_title: m?.game_title, storage_path: m?.storage_path,
-      poll: polls.data?.find((x: any) => x.post_id === r.id) || null,
-      votes: (votes.data || []).filter((x: any) => x.post_id === r.id),
-    }
-  })
-  const paths = (media.data || []).map((m: any) => m.storage_path)
-  if (paths.length) {
-    const { data: signed } = await supabase.storage.from('community-media').createSignedUrls(paths, 3600)
-    for (const m of media.data || []) {
-      const url = signed?.find(s => s.path === m.storage_path)?.signedUrl
-      if (url) mediaUrls.value[m.post_id] = url
-    }
-  }
-  nextPlan.value = ev.data?.[0] || null
-  if (nextPlan.value) {
-    const { data } = await supabase.from('event_rsvps').select('user_id,status').eq('event_id', nextPlan.value.id)
-    nextPlan.value.rsvps = data || []
-  }
-  loading.value = false
+  feed.refresh(); plans.refresh(); ledger.load()
 }
 
 async function goToPlan(e: MouseEvent) {

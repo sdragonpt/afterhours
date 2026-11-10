@@ -1,12 +1,24 @@
-# Nuxt is auto-detected by Netlify (Nitro "netlify" preset): SSR runs as a Netlify Function.
+# Static SPA: built once, served from Netlify's CDN edge (no serverless function).
 [build]
-  command = "npm run build"
+  command = "npm run generate"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "22"
 
+# Any unknown path boots the app shell; the router takes over.
+[[redirects]]
+  from = "/*"
+  to = "/200.html"
+  status = 200
+
 [[headers]]
   for = "/manifest.webmanifest"
   [headers.values]
     Content-Type = "application/manifest+json"
+
+# Hashed build assets never change → cache forever.
+[[headers]]
+  for = "/_nuxt/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

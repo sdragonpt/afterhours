@@ -1,17 +1,24 @@
 import type { Transfer } from '~/utils/settle'
 
-/** Expenses, shares and settlements of the active community + derived balances. */
+/** Expenses (+ shares) and settlements of the active community, cached + derived balances. */
 export function useLedger() {
   const supabase = useSupabaseClient()
-  const community = useCommunity()
   const me = useMe()
   const crew = useCrew()
 
-  const expenses = ref<any[]>([])
-  const shares = ref<any[]>([])
-  const settlements = ref<any[]>([])
-  const loading = ref(false)
-  const error = ref('')
+  const res = useResource('ledger', async (c) => {
+    const [e, s] = await Promise.all([
+      supabase.from('expenses').select('id,description,amount,paid_by,created_by,created_at,expense_shares(user_id,amount_owed)').eq('group_id', c).order('created_at', { ascending: false }),
+      supabase.from('settlements').select('id,payer_id,payee_id,amount,created_by,created_at').eq('group_id', c).order('created_at', { ascending: false }),
+    ])
+    if (e.error) throw e.error
+    if (s.error) throw s.error
+    return { expenses: e.data || [], settlements: s.data || [] }
+  }, () => ({ expenses: [] as any[], settlements: [] as any[] }))
+
+  const expenses = computed(() => res.data.value.expenses)
+  const settlements = computed(() => res.data.value.settlements)
+  const shares = computed(() => expenses.value.flatMap((e: any) => (e.expense_shares || []).map((s: any) => ({ ...s, expense_id: e.id }))))
 
   const balances = computed(() => {
     const map: Record<string, number> = {}
@@ -34,23 +41,5 @@ export function useLedger() {
     return worst
   })
 
-  async function load() {
-    if (!community.value) return
-    loading.value = true; error.value = ''
-    const [e, s] = await Promise.all([
-      supabase.from('expenses').select('id,description,amount,paid_by,created_by,created_at').eq('group_id', community.value).order('created_at', { ascending: false }),
-      supabase.from('settlements').select('id,payer_id,payee_id,amount,created_by,created_at').eq('group_id', community.value).order('created_at', { ascending: false }),
-    ])
-    if (e.error || s.error) { error.value = (e.error || s.error)!.message; loading.value = false; return }
-    expenses.value = e.data || []
-    settlements.value = s.data || []
-    const ids = expenses.value.map(x => x.id)
-    if (ids.length) {
-      const { data } = await supabase.from('expense_shares').select('expense_id,user_id,amount_owed').in('expense_id', ids)
-      shares.value = data || []
-    } else shares.value = []
-    loading.value = false
-  }
-
-  return { expenses, shares, settlements, loading, error, balances, myBalance, transfers, myTransfers, topDebtor, load }
+  return { expenses, shares, settlements, loaded: res.loaded, balances, myBalance, transfers, myTransfers, topDebtor, load: res.refresh }
 }
