@@ -1,0 +1,7 @@
+# Nuxt is auto-detected by Netlify (Nitro "netlify" preset): SSR runs as a Netlify Function.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
