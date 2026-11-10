@@ -1,6 +1,11 @@
 // Absolute site URL for link previews (WhatsApp/Discord need absolute image URLs).
-// Netlify sets URL at build time; fallback is the production domain.
-const SITE_URL = (process.env.URL || 'https://afterhours-malta.netlify.app').replace(/\/$/, '')
+// SITE_URL (set on Vercel) wins; Netlify sets URL; Vercel also exposes the production host.
+const SITE_URL = (
+  process.env.SITE_URL
+  || process.env.URL
+  || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '')
+  || 'https://afterhours-malta.vercel.app'
+).replace(/\/$/, '')
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-01',
