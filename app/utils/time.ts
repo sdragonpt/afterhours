@@ -84,3 +84,9 @@ export const atDay = (key: string, hhmm: string) => {
   const [y, m, d] = key.split('-').map(Number); const [h, mi] = hhmm.split(':').map(Number)
   return new Date(y!, m! - 1, d!, h!, mi!, 0, 0)
 }
+
+/** run after the page enter transition, so a sheet doesn't animate on top of a page swap */
+export const afterPageEnter = (fn: () => void) => {
+  if (typeof window === 'undefined') return fn()
+  requestAnimationFrame(() => setTimeout(fn, 180))
+}

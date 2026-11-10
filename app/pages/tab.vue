@@ -72,7 +72,7 @@ async function addExpense(e: MouseEvent) {
   ledger.load()
 }
 
-watch(() => route.query.new, (n) => { if (n) { if (crew.members.value.length) openAdd(); else watch(() => crew.members.value.length, (l) => l && openAdd(), { once: true }); router.replace({ query: {} }) } }, { immediate: true })
+watch(() => route.query.new, (n) => { if (n) { router.replace({ query: {} }); afterPageEnter(() => { if (crew.members.value.length) openAdd(); else watch(() => crew.members.value.length, (l) => l && openAdd(), { once: true }) }) } }, { immediate: true })
 watch(community, () => ledger.load())
 onMounted(() => ledger.load())
 </script>

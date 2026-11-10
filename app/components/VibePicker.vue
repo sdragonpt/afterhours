@@ -28,7 +28,7 @@ async function set(vibe: Vibe | null, e?: MouseEvent) {
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="vibes stagger">
+    <div class="vibes">
       <button v-for="(v, key) in VIBES" :key="key" class="vibe" :class="[`fill-${v.color}`, { picked: current === key }]" :disabled="saving" @click="set(key as Vibe, $event)">
         {{ v.label }}
       </button>

@@ -76,7 +76,7 @@ async function createLobby(e: MouseEvent) {
   load()
 }
 
-watch(() => route.query.new, (n) => { if (n) { openCreate(); router.replace({ query: {} }) } }, { immediate: true })
+watch(() => route.query.new, (n) => { if (n) { router.replace({ query: {} }); afterPageEnter(() => openCreate()) } }, { immediate: true })
 watch(community, load)
 onMounted(load)
 </script>

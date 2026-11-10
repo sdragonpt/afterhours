@@ -112,7 +112,7 @@ async function create(e: MouseEvent) {
   plans.refresh()
 }
 
-watch(() => route.query.new, (n) => { if (n) { openCreate(); router.replace({ query: {} }) } }, { immediate: true })
+watch(() => route.query.new, (n) => { if (n) { router.replace({ query: {} }); afterPageEnter(() => openCreate()) } }, { immediate: true })
 watch(community, () => plans.refresh())
 onMounted(() => plans.refresh())
 </script>

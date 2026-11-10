@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,800&display=block" rel="stylesheet">
+<style>
+html,body{margin:0;width:100vw;height:100vh;overflow:hidden;background:transparent}
+body{display:grid;place-items:center}
+/* variants via ?v= : full (app icon, full-bleed ink), mask (safe zone), fav (tight, transparent) */
+.tile{position:relative;width:100vmin;height:100vmin;background:#0c0c0e;display:grid;place-items:center;overflow:hidden}
+.fav .tile{background:transparent}
+.sticker{position:relative;width:var(--s);height:var(--s);border-radius:28%;background:#d4ff3a;border:calc(var(--s)*.045) solid #000;box-shadow:calc(var(--s)*.07) calc(var(--s)*.07) 0 #000;transform:rotate(-8deg);display:grid;place-items:center}
+.a{font-family:'Bricolage Grotesque';font-weight:800;font-variation-settings:'wdth' 85;font-size:calc(var(--s)*.98);line-height:1;letter-spacing:-.06em;color:#0c0c0e;transform:translate(-4%,-8%)}
+.dot{position:absolute;width:calc(var(--s)*.2);height:calc(var(--s)*.2);right:13%;bottom:15%;border-radius:50%;background:#ff5a36;border:calc(var(--s)*.035) solid #000}
+.full{--s:70vmin}.mask{--s:56vmin}.fav{--s:82vmin}
+</style></head><body><script>document.body.className=new URLSearchParams(location.search).get('v')||'full'</script>
+<div class="tile"><div class="sticker"><span class="a">a</span><i class="dot"></i></div></div>
+</body></html>

@@ -52,13 +52,15 @@ async function createCommunity() {
   const { data, error } = await supabase.rpc('create_group', { p_name: newName.value.trim() })
   creating.value = false
   if (error) return toast.error(error.message)
+  // close + switch immediately; sync the rest in the background
+  const name = newName.value.trim()
   newName.value = ''
   showSwitcher.value = false
-  await crew.loadGroups()
+  crew.groups.value = [...crew.groups.value, { id: data as string, name, owner_id: me.value!.id }]
   community.value = data as string
-  await crew.loadMembers(true)
   toast.ok('Comunidade criada. Agora convida a malta!')
   navigateTo('/community')
+  crew.loadGroups(); crew.loadMembers(true).then(() => prefetchAll())
 }
 function go(to: string) { showAdd.value = false; navigateTo(to) }
 
@@ -118,7 +120,7 @@ onMounted(boot)
     </nav>
 
     <Sheet :open="showAdd" kicker="O que se passa?" title="Criar" @close="showAdd = false">
-      <div class="qa-grid stagger">
+      <div class="qa-grid">
         <button v-for="a in quickActions" :key="a.label" class="qa" @click="go(a.to)">
           <span class="qa-icon" :class="a.color === 'paper' ? 'qa-paper' : `fill-${a.color}`"><component :is="a.icon" :size="22" :stroke-width="2.2" /></span>
           <strong>{{ a.label }}</strong>
@@ -159,7 +161,7 @@ onMounted(boot)
 .icon-btn.is-on { background: var(--paper); color: var(--on-color); border-color: var(--paper); }
 .main { width: 100%; max-width: 640px; margin: 0 auto; padding: 6px 16px calc(120px + env(safe-area-inset-bottom)); }
 
-.tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 60; display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; max-width: 520px; margin: 0 auto; height: 68px; padding: 0 6px; border: 2px solid #000; border-radius: 999px; background: #1c1c21f2; backdrop-filter: blur(16px); box-shadow: 0 10px 30px #000a; }
+.tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 60; display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; max-width: 520px; margin: 0 auto; height: 68px; padding: 0 6px; border: 2px solid #000; border-radius: 999px; background: #1c1c21; box-shadow: 0 10px 30px #000a; transform: translateZ(0); }
 .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--faint); font-size: 11px; font-weight: 700; transition: color var(--fast), transform var(--fast) var(--ease-out); }
 .tab:active { transform: scale(.9); }
 .tab.on { color: var(--paper); }

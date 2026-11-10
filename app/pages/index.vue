@@ -123,7 +123,7 @@ const showVibe = ref(false)
 
 // open composer from the global "+" sheet
 watch(() => route.query.new, (n) => {
-  if (n === 'post' || n === 'poll' || n === 'clip') { openComposer(n); router.replace({ query: {} }) }
+  if (n === 'post' || n === 'poll' || n === 'clip') { router.replace({ query: {} }); afterPageEnter(() => openComposer(n)) }
 }, { immediate: true })
 watch([community, () => me.value?.id], load)
 onMounted(load)
