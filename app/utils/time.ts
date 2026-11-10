@@ -76,7 +76,7 @@ export const dayLabel = (key: string) => {
   const today = dayKey(new Date()); const tomorrow = dayKey(new Date(Date.now() + 86400000))
   if (key === today) return 'Hoje'
   if (key === tomorrow) return 'Amanhã'
-  return capFirst(x.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'short' }).replace('.', ''))
+  return capFirst(x.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' }))
 }
 
 /** combine a day key + "HH:MM" into a Date */

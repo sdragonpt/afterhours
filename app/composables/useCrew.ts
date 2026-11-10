@@ -27,7 +27,7 @@ export function useCrew() {
   const community = useCommunity()
   const me = useMe()
   const members = useState<Member[]>('crew-members', () => [])
-  const groups = useState<{ id: string; name: string; owner_id: string }[]>('crew-groups', () => [])
+  const groups = useState<{ id: string; name: string; owner_id: string; calendar_token?: string }[]>('crew-groups', () => [])
   const loadedFor = useState<string | null>('crew-loaded-for', () => null)
   const loading = useState('crew-loading', () => false)
 
@@ -45,7 +45,7 @@ export function useCrew() {
 
   async function loadGroups() {
     if (!me.value) return
-    const { data } = await supabase.from('groups').select('id,name,owner_id').order('created_at', { ascending: true })
+    const { data } = await supabase.from('groups').select('id,name,owner_id,calendar_token').order('created_at', { ascending: true })
     groups.value = data || []
     if (!groups.value.some(g => g.id === community.value)) community.value = groups.value[0]?.id || null
   }

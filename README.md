@@ -19,7 +19,7 @@ Online em https://afterhours-malta.netlify.app (deploy automático a cada push p
 2. `npm install` → `npm run dev`.
 
 ## Base de dados (Supabase → SQL Editor, por ordem, uma vez cada)
-`database/schema.sql` → `migrations/003` → `004` → `005` → `006` → `007`.
+`database/schema.sql` → `migrations/003` → … → `008`.
 
 ## Discord
 Dono da comunidade: **Malta → Discord** → cola o URL de um webhook do canal. Planos, lobbies, clips e despesas novas aparecem lá.

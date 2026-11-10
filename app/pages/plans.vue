@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MapPin, Plus, Share2, Trash2, ChevronDown, Clock } from 'lucide-vue-next'
+import { MapPin, Plus, Share2, Trash2, ChevronDown, Clock, CalendarPlus, CalendarSync, X, Smartphone, Copy, RefreshCw } from 'lucide-vue-next'
 definePageMeta({ middleware: 'auth' })
 
 const supabase = useSupabaseClient()
@@ -24,17 +24,38 @@ const marks = computed(() => {
   return m
 })
 const agendaDay = ref<string | null>(null)
-const highlighted = ref<string | null>(null)
+/** plans shown below the calendar: the picked day, or everything coming up */
+const shown = computed(() => agendaDay.value ? upcoming.value.filter((e: any) => dayKey(e.starts_at) === agendaDay.value) : upcoming.value)
 
 function pickDay(key: string) {
-  const first = upcoming.value.find((e: any) => dayKey(e.starts_at) === key)
-  if (first) {
-    highlighted.value = first.id
-    document.getElementById(`plan-${first.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    setTimeout(() => (highlighted.value = null), 1200)
-  } else {
-    openCreate(key)
-  }
+  const hasPlans = upcoming.value.some((e: any) => dayKey(e.starts_at) === key)
+  if (hasPlans) return // v-model already filters the list to that day
+  if (key < dayKey(new Date())) { agendaDay.value = null; return toast.error('Esse dia já passou.') }
+  agendaDay.value = null
+  openCreate(key)
+}
+
+// ── calendar app integration ───────────────────────────
+const calToken = computed(() => crew.group.value?.calendar_token || '')
+const calPath = (eventId?: string) => `/cal/${calToken.value}${eventId ? `/${eventId}` : ''}`
+/** single plan → native "Add to Calendar" sheet on iPhone */
+function addToCalendar(ev: any) {
+  if (!calToken.value) return toast.error('Falta correr a migração 008 no Supabase.')
+  window.open(calPath(ev.id), '_blank')
+}
+const showSubscribe = ref(false)
+const webcalUrl = computed(() => `webcal://${typeof window !== 'undefined' ? window.location.host : ''}${calPath()}`)
+const googleUrl = computed(() => `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl.value)}`)
+async function copyCalLink() {
+  await navigator.clipboard.writeText(webcalUrl.value.replace('webcal://', 'https://'))
+  toast.ok('Link copiado')
+}
+async function rotateCal() {
+  if (!confirm('Gerar um link novo? Quem já subscreveu deixa de receber os planos até subscrever outra vez.')) return
+  const { data, error } = await supabase.rpc('rotate_calendar_token', { p_group: community.value })
+  if (error) return toast.error(error.message)
+  crew.groups.value = crew.groups.value.map(g => g.id === community.value ? { ...g, calendar_token: data as string } : g)
+  toast.ok('Link novo gerado')
 }
 
 const statusOf = (ev: any) => ev.rsvps.find((r: any) => r.user_id === me.value?.id)?.status || null
@@ -128,10 +149,20 @@ onMounted(() => plans.refresh())
     </header>
 
     <!-- agenda -->
-    <section>
-      <DayStrip v-model="agendaDay" :marks="marks" @pick="pickDay" />
-      <p class="faint text-xs m-0 mt-1">Toca num dia livre para marcar um plano.</p>
+    <section class="flex flex-col gap-2">
+      <MonthCalendar v-model="agendaDay" :marks="marks" @pick="pickDay" />
+      <div class="flex items-center justify-between gap-2">
+        <p class="faint text-xs m-0">Toca num dia com plano para o ver, ou num dia livre para marcar.</p>
+        <button class="btn btn-ghost btn-sm flex-none" @click="showSubscribe = true"><CalendarSync :size="15" /> Agenda do iPhone</button>
+      </div>
     </section>
+
+    <Transition name="fade">
+      <div v-if="agendaDay" class="day-filter">
+        <span class="display">{{ dayLabel(agendaDay) }}</span>
+        <button class="chip" @click="agendaDay = null"><X :size="14" /> Ver todos</button>
+      </div>
+    </Transition>
 
     <div v-if="!plans.loaded.value" class="flex flex-col gap-4"><div v-for="i in 2" :key="i" class="skeleton" style="height:220px" /></div>
 
@@ -142,10 +173,11 @@ onMounted(() => plans.refresh())
     </div>
 
     <TransitionGroup v-else name="list" tag="div" class="posters relative">
-      <article v-for="(ev, i) in upcoming" :id="`plan-${ev.id}`" :key="ev.id" class="poster sticker" :class="[`fill-${posterColor(i)}`, { flash: highlighted === ev.id }]" :style="{ '--tilt': (i % 2 ? 1 : -1) * 1.2 + 'deg' }">
+      <article v-for="(ev, i) in shown" :id="`plan-${ev.id}`" :key="ev.id" class="poster sticker" :class="`fill-${posterColor(upcoming.indexOf(ev))}`" :style="{ '--tilt': (i % 2 ? 1 : -1) * 1.2 + 'deg' }">
         <div class="flex items-start justify-between gap-3">
           <span class="when-badge">{{ until(ev.starts_at) }}</span>
           <div class="flex gap-1">
+            <button class="mini" aria-label="Pôr na agenda do telemóvel" title="Pôr na agenda" @click="addToCalendar(ev)"><CalendarPlus :size="16" /></button>
             <button class="mini" aria-label="Partilhar" @click="share(ev)"><Share2 :size="16" /></button>
             <button v-if="ev.created_by === me?.id" class="mini" aria-label="Cancelar plano" @click="remove(ev)"><Trash2 :size="16" /></button>
           </div>
@@ -197,7 +229,7 @@ onMounted(() => plans.refresh())
 
         <div>
           <span class="label">Que dia?</span>
-          <DayStrip v-model="day" :marks="marks" :days="28" compact />
+          <MonthCalendar v-model="day" :marks="marks" disable-past />
           <Transition name="fade">
             <p v-if="sameDay.length" class="clash">Nesse dia já há: <b>{{ sameDay.map((e: any) => e.title).join(', ') }}</b></p>
           </Transition>
@@ -228,6 +260,19 @@ onMounted(() => plans.refresh())
         <textarea v-model="description" class="field" rows="2" maxlength="1000" placeholder="Detalhes (opcional): quem leva o quê, dress code…" />
         <button class="btn btn-primary btn-block" :disabled="saving || !title.trim() || inPast" @click="create">{{ saving ? 'A lançar…' : 'Lançar plano' }}</button>
         <p class="faint text-xs text-center m-0 -mt-3">Se o Discord estiver ligado, a malta recebe aviso lá.</p>
+      </div>
+    </Sheet>
+
+    <Sheet :open="showSubscribe" kicker="Agenda" title="Planos no teu calendário" @close="showSubscribe = false">
+      <div class="flex flex-col gap-4">
+        <p class="muted m-0">Subscreve uma vez e todos os planos da malta aparecem sozinhos no calendário do telemóvel, com lembrete 1 hora antes. Planos novos ou alterados atualizam automaticamente.</p>
+        <a class="btn btn-primary btn-block" :href="webcalUrl"><Smartphone :size="17" /> Calendário do iPhone</a>
+        <a class="btn btn-ghost btn-block" :href="googleUrl" target="_blank" rel="noopener"><CalendarSync :size="17" /> Google Calendar</a>
+        <button class="btn btn-ghost btn-block" @click="copyCalLink"><Copy :size="16" /> Copiar link</button>
+        <p class="faint text-xs m-0">Só um plano? Usa o botão <CalendarPlus :size="12" class="inline" /> no póster do plano.</p>
+        <p class="faint text-xs m-0">O link é secreto: quem o tiver vê os planos desta comunidade.
+          <button v-if="crew.isOwner.value" class="underline" @click="rotateCal"><RefreshCw :size="11" class="inline" /> Gerar link novo</button>
+        </p>
       </div>
     </Sheet>
   </div>
@@ -272,4 +317,7 @@ onMounted(() => plans.refresh())
 .summary small { font-weight: 700; opacity: .7; white-space: nowrap; }
 .summary.bad { background: var(--coral); }
 .clash { margin: 8px 0 0; font-size: 13px; color: var(--sun); }
+.day-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.day-filter .display { font-size: 26px; }
+.day-filter .chip { flex: none; white-space: nowrap; }
 </style>
