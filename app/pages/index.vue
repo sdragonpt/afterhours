@@ -2,7 +2,7 @@
 import { ImagePlus, Send, MessageCircle, Heart, MoreHorizontal, Sparkles, CalendarDays, Gamepad2, Users, ArrowUpRight, Play, Plus, X, LoaderCircle, ChevronDown } from 'lucide-vue-next'
 definePageMeta({ middleware: 'auth' })
 const supabase = useSupabaseClient()
-const user = useSupabaseUser()
+const user = useMe()
 const community = useCommunity()
 const posts = ref<any[]>([])
 const members = ref<any[]>([])
@@ -117,9 +117,10 @@ async function loadMedia() {
   if (!ids.length) return
   const { data } = await supabase.from('post_media').select('id,post_id,storage_path,media_type,game_title').in('post_id', ids)
   if (!data?.length) return
+  const { data: signed } = await supabase.storage.from('community-media').createSignedUrls(data.map(m => m.storage_path), 3600)
   for (const media of data) {
-    const { data: signed } = await supabase.storage.from('community-media').createSignedUrl(media.storage_path, 3600)
-    if (signed?.signedUrl) mediaUrls.value[media.post_id] = signed.signedUrl
+    const url = signed?.find(r => r.path === media.storage_path)?.signedUrl
+    if (url) mediaUrls.value[media.post_id] = url
     const post = posts.value.find(p => p.id === media.post_id)
     if (post) { post.media_type = media.media_type; post.game_title = media.game_title }
   }

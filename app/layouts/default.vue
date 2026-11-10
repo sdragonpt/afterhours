@@ -2,7 +2,7 @@
 import { House, Gamepad2, CalendarDays, Wallet, Users, Settings, Plus, ChevronDown, LogOut, Copy, Check, X, Menu } from 'lucide-vue-next'
 
 const supabase = useSupabaseClient()
-const user = useSupabaseUser()
+const user = useMe()
 const activeCommunity = useCommunity()
 const route = useRoute()
 const groups = ref<any[]>([])
@@ -17,11 +17,11 @@ const error = ref('')
 const creating = ref(false)
 
 const nav = [
-  { label: 'Overview', to: '/', icon: House },
-  { label: 'Gaming hub', to: '/gaming', icon: Gamepad2 },
-  { label: 'Plans & events', to: '/plans', icon: CalendarDays },
-  { label: 'The Tab', to: '/tab', icon: Wallet },
-  { label: 'Members', to: '/community', icon: Users },
+  { label: 'Início', short: 'Início', to: '/', icon: House },
+  { label: 'Gaming', short: 'Gaming', to: '/gaming', icon: Gamepad2 },
+  { label: 'Planos', short: 'Planos', to: '/plans', icon: CalendarDays },
+  { label: 'The Tab', short: 'Tab', to: '/tab', icon: Wallet },
+  { label: 'Malta', short: 'Malta', to: '/community', icon: Users },
 ]
 const initials = computed(() => (profile.value?.display_name || user.value?.email || 'A').slice(0, 1).toUpperCase())
 const activeGroup = computed(() => groups.value.find(g => g.id === activeCommunity.value))
@@ -51,7 +51,7 @@ async function createCommunity() {
 }
 async function makeInvite() {
   if (!activeCommunity.value) return
-  if (activeGroup.value?.owner_id !== user.value?.id) { error.value = 'Only the community owner can create invite links.'; return }
+  if (activeGroup.value?.owner_id !== user.value?.id) { error.value = 'Só o dono da comunidade pode criar convites.'; return }
   const { data, error: rpcError } = await supabase.rpc('create_group_invite', { p_group: activeCommunity.value })
   if (rpcError) { error.value = rpcError.message; return }
   inviteLink.value = `${window.location.origin}/join?token=${data}`
@@ -61,6 +61,7 @@ async function copyInvite() {
   copied.value = true
   setTimeout(() => copied.value = false, 1800)
 }
+const origin = import.meta.client ? window.location.origin : ''
 async function signOut() { await supabase.auth.signOut(); await navigateTo('/login') }
 watch(() => user.value?.id, loadShell)
 onMounted(loadShell)
@@ -75,7 +76,7 @@ onMounted(loadShell)
       </NuxtLink>
 
       <div class="sidebar-section">
-        <div class="section-heading"><span>WORKSPACE</span><button class="icon-button small" title="Criar comunidade" @click="showCreate = true"><Plus :size="15"/></button></div>
+        <div class="section-heading"><span>COMUNIDADE</span><button class="icon-button small" title="Criar comunidade" @click="showCreate = true"><Plus :size="15"/></button></div>
         <div class="community-switcher">
           <span class="community-glyph">{{ activeGroup?.name?.slice(0,1).toUpperCase() || 'A' }}</span>
           <select v-model="activeCommunity" aria-label="Selecionar comunidade">
@@ -95,19 +96,19 @@ onMounted(loadShell)
       </div>
 
       <div class="sidebar-section community-tools">
-        <div class="section-heading"><span>YOUR SPACE</span></div>
-        <button v-if="activeGroup?.owner_id === user?.id" class="nav-link" @click="makeInvite"><Copy :size="17"/><span>Invite friends</span></button>
-        <NuxtLink to="/profile" class="nav-link" :class="{ active: route.path === '/profile' }"><Settings :size="17"/><span>Profile settings</span></NuxtLink>
+        <div class="section-heading"><span>O TEU ESPAÇO</span></div>
+        <button v-if="activeGroup?.owner_id === user?.id" class="nav-link" @click="makeInvite"><Copy :size="17"/><span>Convidar amigos</span></button>
+        <NuxtLink to="/profile" class="nav-link" :class="{ active: route.path === '/profile' }"><Settings :size="17"/><span>Perfil</span></NuxtLink>
       </div>
 
       <div class="sidebar-bottom">
-        <div class="sidebar-status"><span class="online-pulse"/><span>{{ groups.length }} {{ groups.length === 1 ? 'community' : 'communities' }} connected</span></div>
+        <div class="sidebar-status"><span class="online-pulse"/><span>{{ groups.length }} {{ groups.length === 1 ? 'comunidade' : 'comunidades' }}</span></div>
         <button class="user-card" @click="navigateTo('/profile')">
           <span class="avatar">{{ initials }}</span>
-          <span class="user-meta"><strong>{{ profile?.display_name || user?.email?.split('@')[0] || 'Member' }}</strong><small>Community member</small></span>
+          <span class="user-meta"><strong>{{ profile?.display_name || user?.email?.split('@')[0] || 'Membro' }}</strong><small>Ver perfil</small></span>
           <ChevronDown :size="15" class="muted-icon"/>
         </button>
-        <button class="signout-link" @click="signOut"><LogOut :size="15"/> Sign out</button>
+        <button class="signout-link" @click="signOut"><LogOut :size="15"/> Sair</button>
       </div>
     </aside>
 
@@ -118,15 +119,15 @@ onMounted(loadShell)
     <div v-if="showMobileNav" class="mobile-menu lg:hidden">
       <div class="community-switcher"><span class="community-glyph">{{ activeGroup?.name?.slice(0,1).toUpperCase() || 'A' }}</span><select v-model="activeCommunity"><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></div>
       <NuxtLink v-for="item in nav" :key="item.to" :to="item.to" class="nav-link" @click="showMobileNav = false"><component :is="item.icon" :size="18"/>{{ item.label }}</NuxtLink>
-      <button class="nav-link" @click="showCreate = true; showMobileNav = false"><Plus :size="18"/> Create community</button><button v-if="activeGroup?.owner_id === user?.id" class="nav-link" @click="makeInvite"><Copy :size="18"/> Invite friends</button>
-      <button class="nav-link" @click="signOut"><LogOut :size="18"/> Sign out</button>
+      <button class="nav-link" @click="showCreate = true; showMobileNav = false"><Plus :size="18"/> Criar comunidade</button><button v-if="activeGroup?.owner_id === user?.id" class="nav-link" @click="makeInvite"><Copy :size="18"/> Convidar amigos</button>
+      <button class="nav-link" @click="signOut"><LogOut :size="18"/> Sair</button>
     </div>
 
     <div class="main-column">
       <header class="topbar hidden lg:flex">
-        <div class="breadcrumb"><span>Workspace</span><span class="breadcrumb-slash">/</span><strong>{{ activeGroup?.name || 'Your space' }}</strong></div>
+        <div class="breadcrumb"><span>Comunidade</span><span class="breadcrumb-slash">/</span><strong>{{ activeGroup?.name || '—' }}</strong></div>
         <div class="topbar-actions">
-          <span class="topbar-community">{{ groups.length }} {{ groups.length === 1 ? 'community' : 'communities' }}</span>
+          <span class="topbar-community">{{ groups.length }} {{ groups.length === 1 ? 'comunidade' : 'comunidades' }}</span>
           <button class="avatar avatar-small" @click="navigateTo('/profile')">{{ initials }}</button>
         </div>
       </header>
@@ -134,16 +135,16 @@ onMounted(loadShell)
     </div>
 
     <nav class="mobile-bottom-nav lg:hidden">
-      <NuxtLink v-for="item in nav.slice(0,4)" :key="item.to" :to="item.to" :class="{ active: route.path === item.to }"><component :is="item.icon" :size="19"/><span>{{ item.label === 'Gaming hub' ? 'Gaming' : item.label === 'Plans & events' ? 'Plans' : item.label === 'The Tab' ? 'Tab' : 'Home' }}</span></NuxtLink>
-      <NuxtLink to="/community" :class="{ active: route.path === '/community' }"><Users :size="19"/><span>Group</span></NuxtLink>
+      <NuxtLink v-for="item in nav.slice(0,4)" :key="item.to" :to="item.to" :class="{ active: route.path === item.to }"><component :is="item.icon" :size="19"/><span>{{ item.short }}</span></NuxtLink>
+      <NuxtLink to="/community" :class="{ active: route.path === '/community' }"><Users :size="19"/><span>Malta</span></NuxtLink>
     </nav>
 
     <div v-if="showCreate" class="modal-backdrop" @click.self="showCreate = false">
       <section class="modal-card">
-        <div class="modal-heading"><div><span class="eyebrow">NEW WORKSPACE</span><h2>Create a community</h2></div><button class="icon-button" @click="showCreate = false"><X :size="18"/></button></div>
-        <form class="stack-form" @submit.prevent="createCommunity"><label>Community name<input v-model="groupName" class="field" maxlength="60" placeholder="e.g. The usual suspects" required/></label><p v-if="error" class="form-error">{{ error }}</p><button class="primary-button" :disabled="creating">{{ creating ? 'Creating...' : 'Create community' }}</button></form>
+        <div class="modal-heading"><div><span class="eyebrow">NOVA COMUNIDADE</span><h2>Criar comunidade</h2></div><button class="icon-button" @click="showCreate = false"><X :size="18"/></button></div>
+        <form class="stack-form" @submit.prevent="createCommunity"><label>Nome<input v-model="groupName" class="field" maxlength="60" placeholder="ex.: Os do costume" required/></label><p v-if="error" class="form-error">{{ error }}</p><button class="primary-button" :disabled="creating">{{ creating ? 'A criar…' : 'Criar' }}</button></form>
       </section>
     </div>
-    <div v-if="inviteLink" class="toast-card"><div><strong>Invite link ready</strong><span>{{ inviteLink }}</span></div><button class="icon-button small" @click="copyInvite">{{ copied ? 'Copied' : 'Copy' }}</button><button class="icon-button small" @click="inviteLink = ''"><X :size="15"/></button></div>
+    <div v-if="inviteLink" class="toast-card"><div><strong>Link de convite pronto</strong><span>{{ inviteLink }}</span></div><button class="icon-button small" title="Enviar por WhatsApp/Discord" @click="shareOut(`Junta-te à malta no Afterhours 🌙 (${activeGroup?.name})`, inviteLink.replace(origin, ''))">Enviar</button><button class="icon-button small" @click="copyInvite">{{ copied ? 'Copiado' : 'Copiar' }}</button><button class="icon-button small" @click="inviteLink = ''"><X :size="15"/></button></div>
   </div>
 </template>

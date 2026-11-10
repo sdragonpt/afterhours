@@ -1,29 +1,53 @@
-# Afterhours v0.4
+# Afterhours v0.5
 
-Private social space for your crew — Nuxt 4, Vue 3, Tailwind CSS and Supabase.
+Rede social privada para a malta — Nuxt 4, Vue 3, Tailwind CSS e Supabase. Web app instalável no iPhone (PWA), sem App Store.
 
-## What's new in v0.4
+## Novidades na v0.5
 
-- Profile updates now use an `upsert` keyed by the authenticated user's ID, so a missing profile row can be created as well as updated.
-- Event creation is a quick-plan flow: title, quick date presets (today/tomorrow/weekend), date/time, optional details and an interactive map.
-- Map search and pin selection use Leaflet, OpenStreetMap/CARTO tiles and the Photon geocoder.
-- Event coordinates are stored as latitude/longitude and can be opened in OpenStreetMap from the event card.
+**Bug crítico corrigido** — o `@nuxtjs/supabase` v2 guarda as *claims* do JWT em `useSupabaseUser()`, não o objeto `User`. O id está em `sub`, por isso `user.value.id` era sempre `undefined` (posts, perfil, reações, despesas e convites falhavam). Agora usa-se `useMe()` (`app/composables/useMe.ts`), que devolve `{ id, email }`.
 
-## Setup
+**The Tab v2**
+- "Quem paga a quem" com o mínimo de transferências (`app/utils/settle.ts`).
+- Qualquer membro pode ser quem pagou ("o João pagou o jantar").
+- "Marcar como pago" num toque, por quem deve ou por quem recebe.
+- Apagar despesas/pagamentos registados por engano.
+- Divisão ao cêntimo justa (os cêntimos que sobram são distribuídos, não vão todos para um).
+- Partilhar o resumo das dívidas no WhatsApp e "Lembrar no Discord".
 
-1. Copy `.env.example` to `.env` and fill in the Supabase project URL and publishable/anon key. Keep secret/service-role keys out of the browser.
-2. Install dependencies: `npm install`.
-3. If upgrading from v0.3, run `database/migrations/004_event_map_and_profile_fix.sql` once in Supabase SQL Editor. Keep existing data; do not rerun the original schema.
-4. Start the app: `npm run dev`.
+**Discord e WhatsApp**
+- Notificações automáticas num canal do Discord através de um **webhook** (sem bot, sem servidor): novos planos, clips, despesas e acertos. O próprio Postgres envia o pedido (`pg_net`).
+- Botão "Partilhar" nos planos, no The Tab e nos convites. No iPhone abre a folha de partilha nativa (WhatsApp, Discord, Mensagens…); no PC abre o WhatsApp Web.
 
-For a fresh Supabase project, first run `database/schema.sql`, then `database/migrations/003_social_and_events.sql`, then `database/migrations/004_event_map_and_profile_fix.sql`.
+**Convites que funcionam** — um amigo sem conta abre o link → cria conta → entra logo na comunidade (antes o token perdia-se no login).
 
-## Map services
+**PWA** — manifest, ícones e meta tags para "Adicionar ao ecrã principal" no iPhone, e preview de links no WhatsApp/Discord.
 
-The map uses CARTO's dark basemap built on OpenStreetMap data and the Photon geocoding API. A map click stores coordinates and attempts reverse geocoding to provide a readable place label. Searching places is user-triggered, not continuous.
+## Instalação
 
-## Notes
+1. `cp .env.example .env` e preenche `SUPABASE_URL` e `SUPABASE_KEY` (publishable/anon). Nunca ponhas a service role key no browser.
+2. `npm install`
+3. No Supabase → SQL Editor, corre **por esta ordem** (cada um uma vez):
+   - Projeto novo: `database/schema.sql` → `migrations/003_…` → `004_…` → `005_…` → `006_…`
+   - Já tens a v0.4: `004_…` (se ainda não correu), `005_…` e `006_…`
+4. `npm run dev` → http://localhost:3000
 
-- Existing profile RLS policies must allow the authenticated user to insert/update only their own `profiles` row.
-- Event RLS remains scoped to members of the selected community.
-- Verify the map/geocoder services and Supabase policies in your own deployment before inviting the whole group.
+> Se criares conta e o Supabase pedir confirmação por email, em **Authentication → URL Configuration** adiciona `http://localhost:3000/**` (e o domínio final) aos *Redirect URLs*.
+
+## Ligar o Discord
+
+1. No Discord: **Editar canal → Integrações → Webhooks → Novo webhook → Copiar URL do webhook**.
+2. Na app, como dono da comunidade: **Malta → Discord** → cola o URL → Guardar.
+3. O link nos avisos aponta para o domínio onde guardaste (por isso guarda-o já no domínio final depois do deploy).
+
+## No iPhone
+
+Abrir o site no **Safari → Partilhar → Adicionar ao ecrã principal**. Abre em ecrã inteiro como uma app.
+
+## Deploy
+
+Vercel ou Netlify funcionam diretamente com Nuxt. Define `SUPABASE_URL` e `SUPABASE_KEY` nas variáveis de ambiente do projeto.
+
+## Tipos da base de dados
+
+`app/types/database.types.ts` tem um placeholder (`any`). Para tipos reais:
+`npx supabase gen types typescript --project-id <id> > app/types/database.types.ts`

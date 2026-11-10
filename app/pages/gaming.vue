@@ -7,7 +7,7 @@ const clips = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
 const urls = ref<Record<string,string>>({})
-const games = ['All games','Counter-Strike 2','Project Zomboid','Red Dead Redemption 2','Other']
+const games = computed(() => ['All games', ...new Set(clips.value.map(c => c.game_title || 'Other'))])
 const selectedGame = ref('All games')
 const filtered = computed(() => selectedGame.value === 'All games' ? clips.value : clips.value.filter(c => (c.game_title || 'Other') === selectedGame.value))
 async function load() {
@@ -22,9 +22,13 @@ async function load() {
   const { data: people } = authorIds.length ? await supabase.from('profiles').select('id,display_name').in('id', authorIds) : { data: [] }
   const names = new Map((people || []).map(p => [p.id,p.display_name || 'Member']))
   clips.value = (media || []).map(m => ({ ...m, post: (postRows || []).find(p => p.id === m.post_id), author_name: names.get((postRows || []).find(p => p.id === m.post_id)?.author_id) || 'Member' })).filter(m => m.post)
-  for (const clip of clips.value) {
-    const { data: signed } = await supabase.storage.from('community-media').createSignedUrl(clip.storage_path, 3600)
-    if (signed?.signedUrl) urls.value[clip.id] = signed.signedUrl
+  // one request for every signed URL instead of one per clip
+  if (clips.value.length) {
+    const { data: signed } = await supabase.storage.from('community-media').createSignedUrls(clips.value.map(c => c.storage_path), 3600)
+    for (const row of signed || []) {
+      const clip = clips.value.find(c => c.storage_path === row.path)
+      if (clip && row.signedUrl) urls.value[clip.id] = row.signedUrl
+    }
   }
   loading.value = false
 }

@@ -18,3 +18,8 @@
 @media(min-width:901px){.mobile-topbar,.mobile-bottom-nav{display:none}}
 .game-title-input{width:150px}
 .post-game-tag{display:inline-flex;align-items:center;gap:5px;margin-top:9px;padding:5px 7px;border:1px solid #9b83ff24;border-radius:6px;background:#9b83ff10;color:#bbaaff;font-size:9px;font-weight:700}
+/* iPhone home-screen app: content under the translucent status bar / notch */
+.mobile-topbar{padding-top:env(safe-area-inset-top);height:calc(58px + env(safe-area-inset-top))}
+.mobile-menu{top:calc(58px + env(safe-area-inset-top))}
+.page-content{padding-left:max(13px,env(safe-area-inset-left));padding-right:max(13px,env(safe-area-inset-right))}
+.toast-card .icon-button.small{width:auto;padding:0 8px;font-size:10px}

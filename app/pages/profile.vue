@@ -2,7 +2,7 @@
 import { UserRound, Save, LogOut, ShieldCheck, LoaderCircle } from 'lucide-vue-next'
 definePageMeta({ middleware: 'auth' })
 const supabase = useSupabaseClient()
-const user = useSupabaseUser()
+const user = useMe()
 const displayName = ref('')
 const loading = ref(false)
 const initialLoading = ref(true)
