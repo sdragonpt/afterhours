@@ -60,6 +60,8 @@ async function signOut() { await supabase.auth.signOut(); navigateTo('/login') }
     </section>
 
     <button class="btn btn-ghost btn-block" @click="signOut"><LogOut :size="17" /> Sair da conta</button>
+    <DeleteAccount />
+    <NuxtLink to="/privacy" class="faint text-sm text-center underline underline-offset-4">Privacidade e dados</NuxtLink>
   </div>
 </template>
 

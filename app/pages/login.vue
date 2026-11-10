@@ -95,6 +95,7 @@ function friendlyAuthError(e: any) {
         <button v-if="mode === 'login'" type="button" class="link-btn" @click="mode = 'forgot'; message = ''">Esqueci-me da password</button>
         <button v-else-if="mode === 'forgot'" type="button" class="link-btn" @click="mode = 'login'; message = ''">Voltar ao login</button>
       </form>
+      <p class="legal">{{ mode === 'signup' ? 'Ao criar conta aceitas a forma como tratamos os teus dados: ' : '' }}<NuxtLink to="/privacy">Privacidade</NuxtLink></p>
     </section>
   </main>
 </template>
@@ -116,5 +117,7 @@ function friendlyAuthError(e: any) {
 .link-btn { align-self: center; padding: 4px; border: 0; background: none; color: var(--muted); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .link-btn:hover { color: var(--paper); }
 .back-btn { background: var(--ink); color: var(--paper); border-color: #000; }
+.legal { margin: 0; text-align: center; color: var(--faint); font-size: 12px; }
+.legal a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 .err { margin: 0; color: var(--coral); font-weight: 700; font-size: 14px; }
 </style>

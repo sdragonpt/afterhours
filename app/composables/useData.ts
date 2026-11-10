@@ -35,6 +35,9 @@ export function useResource<T>(key: string, fetcher: (community: string) => Prom
   return { data, loaded, refresh }
 }
 
+/** lobbies live 3h after their start time (then the DB deletes them) */
+export const LOBBY_MS = 3 * 3600000
+
 const one = <T>(x: T | T[] | null | undefined): T | null => (Array.isArray(x) ? (x[0] ?? null) : (x ?? null))
 
 // ── feed ────────────────────────────────────────────────
@@ -87,7 +90,7 @@ export function useGamingData() {
   return useResource('gaming', async (c) => {
     const [calls, media] = await Promise.all([
       supabase.from('game_calls').select('id,created_by,game,starts_at,slots,game_call_players(user_id,joined_at)')
-        .eq('group_id', c).gte('starts_at', new Date(Date.now() - 2 * 3600000).toISOString()).order('starts_at'),
+        .eq('group_id', c).gte('starts_at', new Date(Date.now() - LOBBY_MS).toISOString()).order('starts_at'),
       supabase.from('post_media').select('id,post_id,storage_path,media_type,game_title,created_at,posts(author_id,body,category,post_reactions(count))')
         .eq('group_id', c).in('media_type', ['video', 'image']).order('created_at', { ascending: false }).limit(40),
     ])

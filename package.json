@@ -11,6 +11,8 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource-variable/dm-sans": "^5.3.0",
     "@nuxtjs/supabase": "^2.0.0",
     "@nuxtjs/tailwindcss": "^6.0.0",
     "canvas-confetti": "^1.9.3",

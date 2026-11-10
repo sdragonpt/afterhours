@@ -11,7 +11,16 @@ const crew = useCrew()
 const toast = useToast()
 
 const gaming = useGamingData()
-const lobbies = computed({ get: () => gaming.data.value.lobbies, set: (v) => { gaming.data.value = { ...gaming.data.value, lobbies: v } } })
+// hide lobbies past their 3h window even if this screen has been open for a while
+const now = ref(Date.now())
+let tick: ReturnType<typeof setInterval> | undefined
+onMounted(() => { tick = setInterval(() => (now.value = Date.now()), 60_000) })
+onBeforeUnmount(() => clearInterval(tick))
+const lobbies = computed({
+  get: () => gaming.data.value.lobbies.filter((l: any) => new Date(l.starts_at).getTime() + LOBBY_MS > now.value),
+  set: (v) => { gaming.data.value = { ...gaming.data.value, lobbies: v } },
+})
+const endsAt = (l: any) => new Date(new Date(l.starts_at).getTime() + LOBBY_MS).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
 const clips = computed(() => gaming.data.value.clips)
 const urls = computed(() => gaming.data.value.urls)
 const loading = computed(() => !gaming.loaded.value)
@@ -97,7 +106,7 @@ onMounted(load)
       <article v-for="l in lobbies" :key="l.id" class="lobby sticker">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
-            <p class="kicker lobby-kicker">{{ until(l.starts_at) }} · {{ crew.nameOf(l.created_by) }}</p>
+            <p class="kicker lobby-kicker">{{ until(l.starts_at) }} · {{ crew.nameOf(l.created_by) }} · até às {{ endsAt(l) }}</p>
             <h2 class="display lobby-game">{{ l.game }}</h2>
           </div>
           <div class="flex gap-1">

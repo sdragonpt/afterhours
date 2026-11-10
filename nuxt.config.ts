@@ -13,7 +13,8 @@ export default defineNuxtConfig({
   // No server round-trip (Netlify functions run in the US) and no login-page flash on reload.
   ssr: false,
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
-  css: ['~/assets/css/main.css'],
+  // fonts are bundled with the app (no request to Google → no IP sent to third parties)
+  css: ['@fontsource-variable/bricolage-grotesque/standard.css', '@fontsource-variable/dm-sans/standard.css', '~/assets/css/main.css'],
   // We handle auth redirects ourselves (middleware/auth.ts) so invite links survive the login step.
   // SPA: keep the session in localStorage (persistent) instead of an 8h cookie,
   // so friends don't get logged out every day.
@@ -58,9 +59,6 @@ export default defineNuxtConfig({
         { name: 'twitter:card', content: 'summary_large_image' },
       ],
       link: [
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=DM+Sans:opsz,wght@9..40,400..700&display=swap' },
         { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
         { rel: 'icon', href: '/favicon.ico', sizes: '32x32 64x64' },
