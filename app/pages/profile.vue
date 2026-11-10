@@ -52,6 +52,8 @@ async function signOut() { await supabase.auth.signOut(); navigateTo('/login') }
 
     <NotifyCard />
 
+    <WidgetCard />
+
     <section class="panel p-4">
       <p class="kicker m-0 mb-3">A tua vibe agora</p>
       <VibePicker />
