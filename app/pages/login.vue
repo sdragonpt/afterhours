@@ -5,10 +5,10 @@ const user = useMe()
 const route = useRoute()
 const email = ref('')
 const password = ref('')
-const mode = ref<'login' | 'signup'>('login')
+const mode = ref<'login' | 'signup' | 'forgot'>('login')
 const busy = ref(false)
 const message = ref('')
-const sent = ref(false)
+const sent = ref<false | 'signup' | 'reset'>(false)
 
 // Only allow internal redirects (e.g. /join?token=...) to avoid open redirects.
 const redirectTo = computed(() => {
@@ -23,6 +23,11 @@ watchEffect(() => { if (user.value) navigateTo(redirectTo.value, { replace: true
 async function submit() {
   busy.value = true; message.value = ''
   try {
+    if (mode.value === 'forgot') {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.value, { redirectTo: `${window.location.origin}/reset` })
+      if (error) throw error
+      sent.value = 'reset'; return
+    }
     if (mode.value === 'login') {
       const { error } = await supabase.auth.signInWithPassword({ email: email.value, password: password.value })
       if (error) throw error
@@ -33,12 +38,22 @@ async function submit() {
         options: { emailRedirectTo: `${window.location.origin}${redirectTo.value}` },
       })
       if (error) throw error
-      if (!data.session) { sent.value = true; return }
+      if (!data.session) { sent.value = 'signup'; return }
     }
     await navigateTo(redirectTo.value, { replace: true })
   } catch (e: any) {
-    message.value = e.message === 'Invalid login credentials' ? 'Email ou password errados.' : e.message === 'User already registered' ? 'Já tens conta. Entra em vez disso.' : (e.message ?? 'Ocorreu um erro.')
+    message.value = friendlyAuthError(e)
   } finally { busy.value = false }
+}
+
+function friendlyAuthError(e: any) {
+  const m = String(e?.message || '')
+  if (m === 'Invalid login credentials') return 'Email ou password errados.'
+  if (m === 'User already registered') return 'Já tens conta. Entra em vez disso.'
+  if (m === 'Email not confirmed') return 'Confirma primeiro o email (vê a caixa de entrada e o spam).'
+  if (e?.code === 'over_email_send_rate_limit' || /rate limit/i.test(m)) return 'Demasiados emails enviados agora. Tenta daqui a uns minutos.'
+  if (e?.code === 'email_address_not_authorized') return 'O envio de emails ainda não está configurado. Fala com o dono da app.'
+  return m || 'Ocorreu um erro.'
 }
 </script>
 
@@ -57,19 +72,27 @@ async function submit() {
 
       <div v-if="sent" class="card sticker fill-lime">
         <p class="display h-md m-0">Vê o teu email.</p>
-        <p class="m-0 mt-2 font-semibold">Mandámos um link para <b>{{ email }}</b>. Abre-o neste telemóvel e entras logo{{ isInvite ? ' na comunidade' : '' }}.</p>
+        <p v-if="sent === 'signup'" class="m-0 mt-2 font-semibold">Mandámos um link para <b>{{ email }}</b>. Abre-o neste telemóvel e entras logo{{ isInvite ? ' na comunidade' : '' }}.</p>
+        <p v-else class="m-0 mt-2 font-semibold">Se existir uma conta com <b>{{ email }}</b>, recebes um link para escolher uma password nova. Vê também o spam.</p>
+        <button class="btn btn-sm mt-4 back-btn" @click="sent = false; mode = 'login'">Voltar</button>
       </div>
 
       <form v-else class="card panel" @submit.prevent="submit">
         <p v-if="isInvite" class="invite-note fill-lime">Foste convidado. Cria conta para entrar.</p>
-        <div class="seg">
+        <div v-if="mode === 'forgot'">
+          <p class="display h-md m-0">Esqueceste-te?</p>
+          <p class="muted m-0 mt-1 text-sm">Mete o teu email e mandamos um link para escolheres uma password nova.</p>
+        </div>
+        <div v-else class="seg">
           <button type="button" :class="{ on: mode === 'login' }" @click="mode = 'login'">Entrar</button>
           <button type="button" :class="{ on: mode === 'signup' }" @click="mode = 'signup'">Criar conta</button>
         </div>
         <input v-model="email" class="field" type="email" required autocomplete="email" placeholder="Email">
-        <input v-model="password" class="field" type="password" minlength="6" required :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" placeholder="Password (mín. 6)">
+        <input v-if="mode !== 'forgot'" v-model="password" class="field" type="password" minlength="6" required :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" placeholder="Password (mín. 6)">
         <p v-if="message" role="alert" class="err">{{ message }}</p>
-        <button class="btn btn-primary btn-block" :disabled="busy">{{ busy ? 'Aguarda…' : mode === 'login' ? 'Entrar' : 'Criar conta' }}</button>
+        <button class="btn btn-primary btn-block" :disabled="busy">{{ busy ? 'Aguarda…' : mode === 'login' ? 'Entrar' : mode === 'forgot' ? 'Enviar link' : 'Criar conta' }}</button>
+        <button v-if="mode === 'login'" type="button" class="link-btn" @click="mode = 'forgot'; message = ''">Esqueci-me da password</button>
+        <button v-else-if="mode === 'forgot'" type="button" class="link-btn" @click="mode = 'login'; message = ''">Voltar ao login</button>
       </form>
     </section>
   </main>
@@ -89,5 +112,8 @@ async function submit() {
 .seg { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border: 1.5px solid var(--line-strong); border-radius: 999px; }
 .seg button { height: 40px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-weight: 700; transition: background-color var(--fast), color var(--fast); }
 .seg button.on { background: var(--paper); color: var(--on-color); }
+.link-btn { align-self: center; padding: 4px; border: 0; background: none; color: var(--muted); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.link-btn:hover { color: var(--paper); }
+.back-btn { background: var(--ink); color: var(--paper); border-color: #000; }
 .err { margin: 0; color: var(--coral); font-weight: 700; font-size: 14px; }
 </style>
