@@ -1,7 +1,7 @@
 # Afterhours v1.0
 
 Rede social privada para a malta: planos, gaming, contas e vibes. Nuxt 4 + Supabase, instalável no iPhone (PWA).
-Online em https://afterhours-malta.netlify.app (deploy automático a cada push para `main`).
+Online em https://afterhours-malta.vercel.app (Vercel, deploy automático a cada push para `main`).
 
 ## O que tem
 - **Hoje** — saudação, vibes da malta ("Bora sair", "A jogar", "Fome"…), próximo plano em contagem decrescente, saldo do Tab, feed com várias reações por post e sondagens.
