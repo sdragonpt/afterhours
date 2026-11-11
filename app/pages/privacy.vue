@@ -49,8 +49,9 @@ const CONTACT = (useRuntimeConfig().public.privacyContact as string) || ''
         <li><b>Apple / Google / Mozilla</b>: só entregam as notificações push ao teu dispositivo, se as ativares.</li>
         <li><b>Discord</b>: só se o dono da comunidade ligar um canal; recebe avisos de planos e clips novos.</li>
         <li><b>Google (Gmail)</b>: envia os emails de confirmação e recuperação de password.</li>
+        <li><b>Cloudflare Turnstile</b>: só nas páginas de entrar, criar conta e recuperar password, verifica que és uma pessoa e não um bot. Não usa cookies de rastreio nem serve para publicidade.</li>
       </ul>
-      <p>As fontes e o resto da app são servidos pela própria app, sem pedidos a terceiros.</p>
+      <p>As fontes e o resto da app são servidos pela própria app. O único pedido a terceiros fora destes é a verificação anti-bot no ecrã de entrada.</p>
 
       <h2>Porque tratamos os dados</h2>
       <p>Para te dar o serviço que pediste ao criar conta (execução do contrato): mostrar e guardar o que publicas, enviar notificações, manter as contas certas no Tab. A segurança (limites contra abuso, proteção das contas) é feita com base no interesse legítimo de manter a app segura para todos.</p>

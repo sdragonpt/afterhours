@@ -9,6 +9,9 @@ const mode = ref<'login' | 'signup' | 'forgot'>('login')
 const busy = ref(false)
 const message = ref('')
 const sent = ref<false | 'signup' | 'reset'>(false)
+// bot check (Cloudflare Turnstile); Supabase verifies the token
+const captcha = ref<{ reset: () => void; ready: (ms?: number) => Promise<string>; enabled: boolean } | null>(null)
+const captchaToken = ref('')
 
 // Only allow internal redirects (e.g. /join?token=...) to avoid open redirects.
 const redirectTo = computed(() => {
@@ -23,20 +26,23 @@ watchEffect(() => { if (user.value) navigateTo(redirectTo.value, { replace: true
 async function submit() {
   busy.value = true; message.value = ''
   try {
+    // wait briefly for the bot check; without a token Supabase decides (rejects once CAPTCHA is enforced)
+    const token = captcha.value?.enabled ? await captcha.value.ready(8000) : ''
+    const captchaOpt = token ? { captchaToken: token } : {}
     if (mode.value === 'forgot') {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.value, { redirectTo: `${window.location.origin}/reset` })
+      const { error } = await supabase.auth.resetPasswordForEmail(email.value, { redirectTo: `${window.location.origin}/reset`, ...captchaOpt })
       if (error) throw error
       sent.value = 'reset'; return
     }
     if (mode.value === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.value, password: password.value })
+      const { error } = await supabase.auth.signInWithPassword({ email: email.value, password: password.value, options: captchaOpt })
       if (error) throw error
     } else {
       const { data, error } = await supabase.auth.signUp({
         email: email.value,
         password: password.value,
         // confirmation lands on /confirmed (always allowed); the invite is remembered on this device
-        options: { emailRedirectTo: `${window.location.origin}/confirmed` },
+        options: { emailRedirectTo: `${window.location.origin}/confirmed`, ...captchaOpt },
       })
       if (error) throw error
       if (!data.session) { sent.value = 'signup'; return }
@@ -44,11 +50,15 @@ async function submit() {
     await navigateTo(redirectTo.value, { replace: true })
   } catch (e: any) {
     message.value = friendlyAuthError(e)
-  } finally { busy.value = false }
+  } finally {
+    busy.value = false
+    captcha.value?.reset() // tokens are single-use
+  }
 }
 
 function friendlyAuthError(e: any) {
   const m = String(e?.message || '')
+  if (m === 'captcha' || /captcha/i.test(m)) return 'Não deu para confirmar que és humano. Tenta outra vez.'
   if (m === 'Invalid login credentials') return 'Email ou password errados.'
   if (m === 'User already registered') return 'Já tens conta. Entra em vez disso.'
   if (m === 'Email not confirmed') return 'Confirma primeiro o email (vê a caixa de entrada e o spam).'
@@ -91,6 +101,7 @@ function friendlyAuthError(e: any) {
         <input v-model="email" class="field" type="email" required autocomplete="email" placeholder="Email">
         <input v-if="mode !== 'forgot'" v-model="password" class="field" type="password" minlength="6" required :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" placeholder="Password (mín. 6)">
         <p v-if="message" role="alert" class="err">{{ message }}</p>
+        <Turnstile ref="captcha" v-model="captchaToken" />
         <button class="btn btn-primary btn-block" :disabled="busy">{{ busy ? 'Aguarda…' : mode === 'login' ? 'Entrar' : mode === 'forgot' ? 'Enviar link' : 'Criar conta' }}</button>
         <button v-if="mode === 'login'" type="button" class="link-btn" @click="mode = 'forgot'; message = ''">Esqueci-me da password</button>
         <button v-else-if="mode === 'forgot'" type="button" class="link-btn" @click="mode = 'login'; message = ''">Voltar ao login</button>
