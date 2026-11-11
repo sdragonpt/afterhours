@@ -156,6 +156,8 @@ onMounted(boot)
       </form>
     </Sheet>
 
+    <NotifyBar v-if="ready && crew.groups.value.length" />
+
     <div class="toast-wrap">
       <TransitionGroup name="toast" tag="div" class="flex flex-col items-center gap-2">
         <div v-for="t in toasts" :key="t.id" class="toast" :class="{ error: t.kind === 'error' }">{{ t.text }}</div>
