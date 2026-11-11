@@ -4,13 +4,14 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
  * Direct messages: unread badge + one Realtime channel per signed-in user.
  * Pages subscribe with onMessage() to get new/updated messages live.
  */
-export type DM = { id: string; sender_id: string; recipient_id: string; body: string; created_at: string; read_at: string | null }
+export type DM = { id: string; sender_id: string; recipient_id: string; body: string; media_path: string | null; created_at: string; delivered_at: string | null; read_at: string | null }
 type Listener = (m: DM, kind: 'INSERT' | 'UPDATE' | 'DELETE') => void
 
 const listeners = new Set<Listener>()
 let channel: RealtimeChannel | null = null
 let channelFor: string | null = null
 let visibilityHooked = false
+let deliverTimer: ReturnType<typeof setTimeout> | undefined
 
 export function useDMs() {
   const supabase = useSupabaseClient()
@@ -25,6 +26,12 @@ export function useDMs() {
     if (typeof data === 'number') unread.value = data
   }
 
+  /** "Entregue": tell senders their messages reached this device (batched) */
+  function markDelivered() {
+    clearTimeout(deliverTimer)
+    deliverTimer = setTimeout(() => { supabase.rpc('dm_mark_delivered').then(() => {}) }, 300)
+  }
+
   async function start() {
     if (!import.meta.client) return
     const uid = me.value?.id || null
@@ -36,6 +43,7 @@ export function useDMs() {
     channel = supabase.channel(`dm:${uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages', filter: `recipient_id=eq.${uid}` }, (p: any) => {
         const row = p.eventType === 'DELETE' ? p.old : p.new
+        if (p.eventType === 'INSERT') markDelivered()
         if (p.eventType === 'INSERT' && row.sender_id !== openWith.value) unread.value++
         else if (p.eventType !== 'INSERT') refreshUnread()
         emit(p.eventType, row)
@@ -45,9 +53,10 @@ export function useDMs() {
       })
       .subscribe()
     refreshUnread()
+    markDelivered()
     if (!visibilityHooked) {
       visibilityHooked = true
-      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshUnread() })
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refreshUnread(); markDelivered() } })
     }
   }
 

@@ -1,7 +1,7 @@
 /**
  * afterhours-media — private clip storage on R2.
  *
- *   POST   /upload?group=<id>&name=<file>   (Bearer <supabase access token>, raw body)
+ *   POST   /upload?group=<id>|dm=<user> *   POST   /upload?group=<id>&name=<file>   (Bearer <supabase access token>, raw body)name=<file>   (Bearer <supabase access token>, raw body)
  *   POST   /sign    { keys: string[] }      (Bearer …) → short-lived playback URLs
  *   DELETE /object  { key }                 (Bearer …) → only the uploader can delete
  *   DELETE /group   { group }               (Bearer …) → owner wipes every file of a community
@@ -82,14 +82,26 @@ async function upload(req: Request, env: Env, url: URL) {
   const user = await userFrom(req, env)
   if (!user) return json({ error: 'Sessão inválida' }, 401)
   const group = url.searchParams.get('group') || ''
-  if (!(await isMember(group, user.token, env))) return json({ error: 'Não pertences a esta comunidade' }, 403)
+  const dm = url.searchParams.get('dm') || ''
+  let prefix: string
+  if (dm) {
+    // private message photo: only to someone you share a community with
+    if (!UUID.test(dm)) return json({ error: 'Destinatário inválido' }, 400)
+    const r = await rpc(env, 'can_message', { p_other: dm }, user.token)
+    if (!r.ok || (await r.json()) !== true) return json({ error: 'Não podes enviar mensagens a esta pessoa' }, 403)
+    prefix = `dm/${user.id}/${dm}`
+  } else {
+    if (!(await isMember(group, user.token, env))) return json({ error: 'Não pertences a esta comunidade' }, 403)
+    prefix = `${group}/${user.id}`
+  }
   const type = (req.headers.get('content-type') || '').split(';')[0]!.trim()
   if (!TYPES.test(type)) return json({ error: 'Tipo de ficheiro não suportado' }, 415)
+  if (dm && !type.startsWith('image/')) return json({ error: 'Nas mensagens só dá para enviar fotos' }, 415)
   const size = Number(req.headers.get('content-length') || 0)
   if (!size) return json({ error: 'Tamanho em falta' }, 411)
   if (size > MAX_BYTES) return json({ error: 'Ficheiro acima de 100 MB' }, 413)
   const name = (url.searchParams.get('name') || 'clip').replace(/[^a-zA-Z0-9._-]/g, '-').slice(-80)
-  const key = `${group}/${user.id}/${crypto.randomUUID()}-${name}`
+  const key = `${prefix}/${crypto.randomUUID()}-${name}`
   await env.MEDIA.put(key, req.body, { httpMetadata: { contentType: type, cacheControl: 'private, max-age=31536000, immutable' } })
   return json({ key })
 }

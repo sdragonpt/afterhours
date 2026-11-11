@@ -46,6 +46,8 @@ watch([() => route.path, () => crew.features.value, ready], () => {
 })
 
 const dms = useDMs()
+// inside a conversation: full-screen chat, no top bar / tab bar (like Instagram)
+const chatMode = computed(() => route.path.startsWith('/messages/') && route.path.length > '/messages/'.length)
 
 async function boot() {
   if (!me.value) return
@@ -100,8 +102,8 @@ onMounted(boot)
 <template>
   <div class="shell">
     <Transition name="splash"><AppSplash v-if="!ready" /></Transition>
-    <PullToRefresh v-if="ready && crew.groups.value.length" :on-refresh="pullRefresh" />
-    <header class="topbar">
+    <PullToRefresh v-if="ready && crew.groups.value.length && !chatMode" :on-refresh="pullRefresh" />
+    <header v-show="!chatMode" class="topbar">
       <button v-if="crew.groups.value.length" class="crew-pill" @click="showSwitcher = true">
         <span class="crew-glyph fill-lime">{{ crew.group.value?.name.slice(0, 1).toUpperCase() }}</span>
         <span class="truncate">{{ crew.group.value?.name }}</span>
@@ -139,7 +141,7 @@ onMounted(boot)
       <slot v-else />
     </main>
 
-    <nav v-if="crew.groups.value.length" class="tabbar" aria-label="Navegação" :style="{ gridTemplateColumns: `repeat(${tabs.length + 1}, 1fr)`, maxWidth: `${Math.max(240, (tabs.length + 1) * 104)}px` }">
+    <nav v-if="crew.groups.value.length && !chatMode" class="tabbar" aria-label="Navegação" :style="{ gridTemplateColumns: `repeat(${tabs.length + 1}, 1fr)`, maxWidth: `${Math.max(240, (tabs.length + 1) * 104)}px` }">
       <NuxtLink v-for="t in tabs.slice(0, half)" :key="t.to" :to="t.to" class="tab" :class="{ on: isActive(t.to) }"><component :is="t.icon" :size="22" :stroke-width="isActive(t.to) ? 2.4 : 1.8" /><span>{{ t.label }}</span></NuxtLink>
       <button class="fab" aria-label="Criar" @click="showAdd = true"><Plus :size="28" :stroke-width="2.6" /></button>
       <NuxtLink v-for="t in tabs.slice(half)" :key="t.to" :to="t.to" class="tab" :class="{ on: isActive(t.to) }"><component :is="t.icon" :size="22" :stroke-width="isActive(t.to) ? 2.4 : 1.8" /><span>{{ t.label }}</span></NuxtLink>
@@ -182,7 +184,7 @@ onMounted(boot)
 
 <style scoped>
 .shell { min-height: 100dvh; }
-.topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: max(12px, calc(env(safe-area-inset-top) + 6px)) 16px 10px; background: linear-gradient(var(--ink) calc(100% - 14px), transparent); }
+.topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: max(14px, calc(env(safe-area-inset-top) + 14px)) 16px 10px; background: linear-gradient(var(--ink) calc(100% - 14px), transparent); }
 .crew-pill { display: flex; align-items: center; gap: 9px; min-width: 0; max-width: 62vw; height: 44px; padding: 0 12px 0 5px; border: 1.5px solid var(--line-strong); border-radius: 999px; background: var(--ink-2); font-weight: 700; transition: transform var(--fast) var(--ease-out); }
 .crew-pill:active { transform: scale(.97); }
 .crew-glyph { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border: 2px solid #000; border-radius: 999px; font-family: var(--font-display); font-weight: 800; }

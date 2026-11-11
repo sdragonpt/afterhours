@@ -5,6 +5,8 @@ useHead({ title: 'Mensagens · Afterhours' })
 
 const supabase = useSupabaseClient()
 const dms = useDMs()
+const root = ref<HTMLElement | null>(null)
+useSwipeBack(root, '/')
 
 type Thread = { other_id: string; name: string; color: string; last_body: string; last_at: string; last_from_me: boolean; unread: number }
 type Contact = { user_id: string; name: string; color: string }
@@ -36,7 +38,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="flex flex-col gap-5">
+  <div ref="root" class="flex flex-col gap-5 swipe-page">
     <header class="flex items-end justify-between gap-3 pt-2">
       <div>
         <p class="kicker">Privado</p>

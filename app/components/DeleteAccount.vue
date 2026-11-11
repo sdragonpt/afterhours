@@ -15,14 +15,16 @@ async function run() {
   try {
     // 1) my files first (the session is still valid now)
     step.value = 'A apagar fotos e clips…'
-    const [posts, comments, groups] = await Promise.all([
+    const [posts, comments, groups, dmPhotos] = await Promise.all([
       supabase.from('posts').select('post_media(storage_path)').eq('author_id', me.value.id),
       supabase.from('post_comments').select('media_path').eq('user_id', me.value.id).not('media_path', 'is', null),
       supabase.from('group_members').select('group_id').eq('user_id', me.value.id),
+      supabase.from('direct_messages').select('media_path').eq('sender_id', me.value.id).not('media_path', 'is', null),
     ])
     const paths = [
       ...(posts.data || []).flatMap((p: any) => (p.post_media || []).map((m: any) => m.storage_path)),
       ...(comments.data || []).map((c: any) => c.media_path),
+      ...(dmPhotos.data || []).map((d: any) => d.media_path),
     ].filter(Boolean) as string[]
     for (const p of paths) await media.remove(p)
     // legacy Supabase Storage folders: <group>/<me>/*

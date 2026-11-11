@@ -16,12 +16,13 @@ export function useMedia() {
   }
 
   /** Upload to R2 with real progress (XHR, since fetch has no upload progress). */
-  async function upload(file: File, group: string, onProgress?: (p: number) => void): Promise<string> {
+  async function upload(file: File, group: string, onProgress?: (p: number) => void, dm?: string): Promise<string> {
     if (!base) throw new Error('Armazenamento de vídeos não configurado.')
     const t = await token()
     return await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${base}/upload?group=${encodeURIComponent(group)}&name=${encodeURIComponent(file.name)}`)
+      const target = dm ? `dm=${encodeURIComponent(dm)}` : `group=${encodeURIComponent(group)}`
+      xhr.open('POST', `${base}/upload?${target}&name=${encodeURIComponent(file.name)}`)
       xhr.setRequestHeader('authorization', `Bearer ${t}`)
       xhr.setRequestHeader('content-type', file.type)
       xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total) }
@@ -104,6 +105,15 @@ export function useMedia() {
     return { path, file: out, note }
   }
 
+  /** Photo for a private message: compressed, stored under dm/<me>/<them>/ (Worker checks you can message them). */
+  async function sendDM(f: File, recipient: string, onProgress?: (p: number) => void): Promise<string> {
+    if (!base) throw new Error('Armazenamento de fotos não configurado.')
+    if (!f.type.startsWith('image/')) throw new Error('Nas mensagens só dá para enviar fotos.')
+    const out = await compressImage(f)
+    if (out.size > 25 * 1024 * 1024) throw new Error('Foto demasiado grande.')
+    return await upload(out, '', onProgress, recipient)
+  }
+
   /** Owner deleting a community: wipe all its photos/clips from R2 (the Worker checks ownership). */
   async function removeGroup(group: string) {
     if (!base) return
@@ -114,5 +124,5 @@ export function useMedia() {
     }
   }
 
-  return { upload, send, sign, remove, removeGroup, enabled: !!base }
+  return { upload, send, sendDM, sign, remove, removeGroup, enabled: !!base }
 }
