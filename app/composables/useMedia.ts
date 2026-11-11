@@ -104,5 +104,15 @@ export function useMedia() {
     return { path, file: out, note }
   }
 
-  return { upload, send, sign, remove, enabled: !!base }
+  /** Owner deleting a community: wipe all its photos/clips from R2 (the Worker checks ownership). */
+  async function removeGroup(group: string) {
+    if (!base) return
+    const r = await fetch(`${base}/group`, { method: 'DELETE', headers: { authorization: `Bearer ${await token()}`, 'content-type': 'application/json' }, body: JSON.stringify({ group }) })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      throw new Error(body.error || 'Não deu para apagar as fotos e clips')
+    }
+  }
+
+  return { upload, send, sign, remove, removeGroup, enabled: !!base }
 }

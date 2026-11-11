@@ -126,12 +126,14 @@ onMounted(load)
       </button>
       <Transition name="fade">
         <div v-if="showDiscord" class="px-4 pb-4 flex flex-col gap-3">
-          <p class="muted text-sm m-0">No Discord: <b class="text-[var(--paper)]">Editar canal → Integrações → Webhooks → Novo → Copiar URL</b>. O canal recebe planos, lobbies, clips e despesas.</p>
+          <p class="muted text-sm m-0">No Discord: <b class="text-[var(--paper)]">Editar canal → Integrações → Webhooks → Novo → Copiar URL</b>. O canal recebe os planos e clips novos.</p>
           <input v-model="webhook" class="field" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
           <button class="btn btn-ghost" :disabled="savingHook" @click="saveDiscord">{{ savingHook ? 'A guardar…' : 'Guardar' }}</button>
         </div>
       </Transition>
     </section>
+
+    <DeleteCommunity v-if="crew.isOwner.value" />
   </div>
 </template>
 

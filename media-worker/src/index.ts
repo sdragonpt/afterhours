@@ -4,6 +4,7 @@
  *   POST   /upload?group=<id>&name=<file>   (Bearer <supabase access token>, raw body)
  *   POST   /sign    { keys: string[] }      (Bearer …) → short-lived playback URLs
  *   DELETE /object  { key }                 (Bearer …) → only the uploader can delete
+ *   DELETE /group   { group }               (Bearer …) → owner wipes every file of a community
  *   GET    /m/<key>?exp=&sig=               → streams the object (Range supported)
  *
  * Who is allowed is decided by Supabase: the user's own token is checked against
@@ -117,6 +118,24 @@ async function remove(req: Request, env: Env) {
   return json({ ok: true })
 }
 
+/** Community owner is deleting it: remove every object under `<group>/`. */
+async function removeGroup(req: Request, env: Env) {
+  const user = await userFrom(req, env)
+  if (!user) return json({ error: 'Sessão inválida' }, 401)
+  const { group } = await req.json<{ group?: string }>().catch(() => ({ group: '' }))
+  if (!group || !UUID.test(group)) return json({ error: 'Comunidade inválida' }, 400)
+  const r = await rpc(env, 'owns_group', { p_group: group }, user.token)
+  if (!r.ok || (await r.json()) !== true) return json({ error: 'Só o dono pode apagar a comunidade' }, 403)
+  let removed = 0
+  let cursor: string | undefined
+  do {
+    const page = await env.MEDIA.list({ prefix: `${group}/`, cursor, limit: 1000 })
+    if (page.objects.length) { await env.MEDIA.delete(page.objects.map(o => o.key)); removed += page.objects.length }
+    cursor = page.truncated ? page.cursor : undefined
+  } while (cursor)
+  return json({ ok: true, removed })
+}
+
 async function serve(req: Request, env: Env, url: URL) {
   const key = decodeURIComponent(url.pathname.slice(3))
   const exp = Number(url.searchParams.get('exp') || 0)
@@ -153,6 +172,7 @@ export default {
       if (req.method === 'POST' && url.pathname === '/upload') res = await upload(req, env, url)
       else if (req.method === 'POST' && url.pathname === '/sign') res = await sign(req, env, url.origin)
       else if (req.method === 'DELETE' && url.pathname === '/object') res = await remove(req, env)
+      else if (req.method === 'DELETE' && url.pathname === '/group') res = await removeGroup(req, env)
       else if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname.startsWith('/m/')) res = await serve(req, env, url)
       else res = new Response('afterhours-media', { status: 404 })
       for (const [k, v] of Object.entries(c)) res.headers.set(k, v)
