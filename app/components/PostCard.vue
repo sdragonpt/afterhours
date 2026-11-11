@@ -95,7 +95,7 @@ function share() {
     </div>
 
     <div v-if="mediaUrl" class="media">
-      <video v-if="post.media_type === 'video'" :src="mediaUrl" controls playsinline preload="metadata" />
+      <ClipVideo v-if="post.media_type === 'video'" :src="mediaUrl" />
       <img v-else :src="mediaUrl" alt="" loading="lazy">
     </div>
 

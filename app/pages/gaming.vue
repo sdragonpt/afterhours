@@ -137,7 +137,7 @@ onMounted(load)
     <section v-if="clipOfWeek" class="cotw">
       <div class="cotw-badge fill-sun"><Trophy :size="16" /> Clip da semana</div>
       <img v-if="clipOfWeek.media_type === 'image'" :src="urls[clipOfWeek.id]" alt="" class="cotw-img">
-      <video v-else :src="urls[clipOfWeek.id]" controls playsinline preload="metadata" />
+      <ClipVideo v-else :src="urls[clipOfWeek.id]" />
       <div class="cotw-info">
         <Avatar :name="crew.nameOf(clipOfWeek.author_id)" :color="crew.colorOf(clipOfWeek.author_id)" :size="36" />
         <div class="min-w-0 flex-1"><strong class="block truncate">{{ clipOfWeek.body }}</strong><small class="muted">{{ crew.nameOf(clipOfWeek.author_id) }} · {{ clipOfWeek.game_title || 'Outros' }} · {{ clipOfWeek.score }} reações</small></div>
@@ -160,7 +160,7 @@ onMounted(load)
       <div class="clip-grid stagger">
         <article v-for="c in shownClips" :key="c.id" class="clip">
           <img v-if="c.media_type === 'image'" :src="urls[c.id]" alt="" loading="lazy" class="clip-img">
-          <video v-else :src="urls[c.id]" controls playsinline preload="metadata" />
+          <ClipVideo v-else :src="urls[c.id]" />
           <div class="clip-meta">
             <span class="tag fill-sky">{{ c.game_title || 'Outros' }}</span>
             <strong class="truncate">{{ c.body }}</strong>
