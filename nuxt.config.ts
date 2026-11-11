@@ -28,7 +28,7 @@ export default defineNuxtConfig({
       // public half of the VAPID pair (private key lives only in Vercel env)
       // Cloudflare Turnstile site key (public). Empty disables the bot check.
       turnstileSiteKey: process.env.TURNSTILE_SITE_KEY ?? '0x4AAAAAAF8zfiI-jQdiZsZu',
-      privacyContact: process.env.PRIVACY_CONTACT || '',
+      privacyContact: process.env.PRIVACY_CONTACT || 'sergionunoribeiro@gmail.com',
     vapidPublicKey: process.env.VAPID_PUBLIC_KEY || 'BHgr8VJsmDRU-PAM76rasSuL8KlxjuzvStKLhcD-krzVgTclG3HXmaUEmOm5S0u79yGMKHx0XPR-OaHU57gjYDM',
     },
   },
