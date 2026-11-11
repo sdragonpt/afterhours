@@ -7,6 +7,7 @@
  */
 export function useTabSwipe(target: Ref<HTMLElement | null>, routes: Ref<string[]>, enabled: Ref<boolean>) {
   const route = useRoute()
+  const swipeNav = useState('tab-swipe-nav', () => false)
   let sx = 0, sy = 0, st = 0, dx = 0
   let locked: boolean | null = null
   let active = false
@@ -19,7 +20,7 @@ export function useTabSwipe(target: Ref<HTMLElement | null>, routes: Ref<string[
     if (!el) return
     el.style.transition = ms ? `transform ${ms}ms cubic-bezier(.22, 1, .36, 1), opacity ${ms}ms ease-out` : 'none'
     el.style.transform = x ? `translate3d(${x}px, 0, 0)` : ''
-    el.style.opacity = x ? String(Math.max(0.4, 1 - Math.abs(x) / (window.innerWidth * 1.6))) : ''
+    el.style.opacity = x ? String(Math.max(0.75, 1 - Math.abs(x) / (window.innerWidth * 3))) : ''
   }
 
   function blockedBy(el: HTMLElement | null): boolean {
@@ -68,20 +69,40 @@ export function useTabSwipe(target: Ref<HTMLElement | null>, routes: Ref<string[
       return
     }
     busy = true
-    setX(-dir * w, 180)                      // current section slides out
-    await new Promise(r => setTimeout(r, 170))
+    swipeNav.value = true                       // no page fade: the swipe is the animation
     const el = target.value
-    if (el) el.style.visibility = 'hidden'
+    el?.classList.add('tab-swiping')            // and no pop-in of the new page's cards
+    const out = -dir * Math.max(Math.abs(dx), w * 0.42)
+    setX(out, 130)                              // current section moves on a bit further…
+    await new Promise(r => setTimeout(r, 120))
+    // swap: the old page is still on screen until the new one renders (already preloaded),
+    // and the new one is placed off to the other side before the browser paints it
     await navigateTo(next)
     await nextTick()
-    setX(dir * w * 0.5)                      // next one waits on the other side…
-    if (el) el.style.visibility = ''
+    setX(dir * w * 0.32)                        // next section starts just off the other side
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-    setX(0, 260)                             // …and slides in
-    setTimeout(() => { busy = false; const t = target.value; if (t) { t.style.transition = ''; t.style.opacity = '' } }, 280)
+    setX(0, 230)                                // …and glides in
+    setTimeout(() => {
+      busy = false
+      swipeNav.value = false
+      if (el) { el.style.transition = ''; el.style.opacity = ''; }
+    }, 250)
   }
 
+  // load the neighbouring sections ahead of time so the swap is instant
+  function preloadNeighbours() {
+    const i = index()
+    for (const r of [routes.value[i - 1], routes.value[i + 1]]) if (r) preloadRouteComponents(r).catch(() => {})
+  }
+  watch(() => route.path, () => {
+    if (!import.meta.client) return
+    preloadNeighbours()
+    // a normal navigation (tap) gets the usual entrance animations back
+    if (!swipeNav.value) target.value?.classList.remove('tab-swiping')
+  })
+
   onMounted(() => {
+    preloadNeighbours()
     document.addEventListener('touchstart', onStart, { passive: true })
     document.addEventListener('touchmove', onMove, { passive: false })
     document.addEventListener('touchend', onEnd)

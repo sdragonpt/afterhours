@@ -192,3 +192,6 @@ textarea.field { resize: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* swiping between sections: the new page appears already in place (no pop-in / stagger) */
+.tab-swiping .stagger > *, .tab-swiping .hello, .tab-swiping .poster, .tab-swiping .balance, .tab-swiping .slot.filled { animation: none !important; }
