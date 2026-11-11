@@ -47,6 +47,9 @@ watch([() => route.path, () => crew.features.value, ready], () => {
 
 const dms = useDMs()
 // inside a conversation: full-screen chat, no top bar / tab bar (like Instagram)
+// swipe between Hoje · Planos · Gaming · Tab (only the ones this community uses)
+const mainEl = ref<HTMLElement | null>(null)
+useTabSwipe(mainEl, computed(() => tabs.value.map(t => t.to)), computed(() => ready.value && crew.groups.value.length > 0))
 const chatMode = computed(() => route.path.startsWith('/messages/') && route.path.length > '/messages/'.length)
 
 async function boot() {
@@ -127,7 +130,7 @@ onMounted(boot)
       <button class="btn btn-primary mt-4" @click="showAdd = true"><Plus :size="18" /> Criar</button>
     </nav>
 
-    <main class="main">
+    <main ref="mainEl" class="main">
       <div v-if="!ready" />
 
       <section v-else-if="!crew.groups.value.length" class="onboard stagger">

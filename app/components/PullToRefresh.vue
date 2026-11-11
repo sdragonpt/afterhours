@@ -10,7 +10,9 @@ const MAX = 120
 const pull = ref(0)
 const refreshing = ref(false)
 let startY = 0
+let startX = 0
 let tracking = false
+let vertical: boolean | null = null
 
 const progress = computed(() => Math.min(1, pull.value / THRESHOLD))
 const armed = computed(() => pull.value >= THRESHOLD)
@@ -22,11 +24,17 @@ function blocked() {
 function onStart(e: TouchEvent) {
   if (blocked() || e.touches.length !== 1) { tracking = false; return }
   tracking = true
+  vertical = null
   startY = e.touches[0]!.clientY
+  startX = e.touches[0]!.clientX
 }
 function onMove(e: TouchEvent) {
   if (!tracking) return
   const dy = e.touches[0]!.clientY - startY
+  const dx = e.touches[0]!.clientX - startX
+  // sideways swipes (between sections) are not a pull
+  if (vertical === null && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) vertical = Math.abs(dy) >= Math.abs(dx)
+  if (vertical === false) { tracking = false; pull.value = 0; return }
   if (dy <= 0 || window.scrollY > 0) { pull.value = 0; return }
   // rubber-band resistance
   pull.value = Math.min(MAX, dy * 0.55)
