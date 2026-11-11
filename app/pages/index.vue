@@ -103,7 +103,7 @@ async function publish(e: MouseEvent) {
   }
   stage.value = 'save'
   const text = body.value.trim() || (composer.value === 'clip' ? 'Olhem para isto 👀' : '📸')
-  const { data: post, error } = await supabase.from('posts').insert({ group_id: community.value, author_id: me.value.id, body: text, category: category.value }).select('id').single()
+  const { data: post, error } = await supabase.from('posts').insert({ group_id: community.value, author_id: me.value.id, body: text, category: category.value, mentions: mentionsIn(text, crew.members.value) }).select('id').single()
   if (error) { posting.value = false; stage.value = null; if (sent) media.remove(sent.path); return toast.error(error.message) }
   if (composer.value === 'poll') {
     const { error: pe } = await supabase.from('post_polls').insert({ post_id: post.id, group_id: community.value, options: options.value.map(o => o.trim()).filter(Boolean) })
@@ -153,7 +153,7 @@ async function addComment() {
     try { mediaPath = (await media.send(commentPhoto.value, community.value!, me.value.id)).path }
     catch (err: any) { commentBusy.value = false; return toast.error(err?.message || 'Falha no envio da foto') }
   }
-  const row = { post_id: commentsFor.value, group_id: community.value, user_id: me.value.id, body: commentText.value.trim() || '📷', media_path: mediaPath }
+  const row = { post_id: commentsFor.value, group_id: community.value, user_id: me.value.id, body: commentText.value.trim() || '📷', media_path: mediaPath, mentions: mentionsIn(commentText.value, crew.members.value) }
   const preview = commentPhotoPreview.value
   commentText.value = ''; commentPhoto.value = null; commentPhotoPreview.value = ''
   const { data, error } = await supabase.from('post_comments').insert(row).select('id,user_id,body,media_path,created_at').single()
@@ -197,9 +197,10 @@ onMounted(load)
     </section>
 
     <!-- live / starting-soon lobbies -->
-    <LiveLobbies />
+    <LiveLobbies v-if="crew.features.value.gaming" />
 
     <!-- next plan poster -->
+    <template v-if="crew.features.value.plans">
     <NuxtLink v-if="nextPlan" to="/plans" class="poster sticker fill-coral">
       <div class="flex items-center justify-between">
         <span class="kicker poster-kicker">Próximo plano</span>
@@ -218,9 +219,10 @@ onMounted(load)
       <span><b>Nenhum plano à vista.</b><br><span class="muted">Sê tu a puxar pela malta.</span></span>
       <Plus :size="20" />
     </NuxtLink>
+    </template>
 
     <!-- money nudge -->
-    <NuxtLink to="/tab" class="money" :class="ledger.myBalance.value < -0.004 ? 'owe' : ledger.myBalance.value > 0.004 ? 'get' : 'clean'">
+    <NuxtLink v-if="crew.features.value.tab" to="/tab" class="money" :class="ledger.myBalance.value < -0.004 ? 'owe' : ledger.myBalance.value > 0.004 ? 'get' : 'clean'">
       <span class="kicker">The Tab</span>
       <span v-if="ledger.myBalance.value < -0.004" class="money-line">Deves <b class="num">{{ euros(-ledger.myBalance.value) }}</b><template v-if="myDebt.length === 1"> a {{ crew.nameOf(myDebt[0]!.to) }}</template></span>
       <span v-else-if="ledger.myBalance.value > 0.004" class="money-line">Tens <b class="num">{{ euros(ledger.myBalance.value) }}</b> a receber</span>
@@ -255,6 +257,7 @@ onMounted(load)
     <!-- sheets -->
     <Sheet :open="!!composer" :kicker="composer === 'poll' ? 'Decidam já' : composer === 'clip' ? 'Highlight' : 'Para a malta'" :title="composer === 'poll' ? 'Nova sondagem' : composer === 'clip' ? 'Novo clip' : 'Novo post'" @close="composer = null">
       <div class="flex flex-col gap-4">
+        <MentionSuggest v-model="body" />
         <textarea v-model="body" class="field" rows="3" maxlength="2000" :placeholder="composer === 'poll' ? 'Onde é o jantar de sábado?' : composer === 'clip' ? 'Conta o contexto…' : 'Diz qualquer coisa…'" />
 
         <div v-if="composer === 'poll'" class="flex flex-col gap-2">
@@ -299,11 +302,12 @@ onMounted(load)
       <TransitionGroup name="list" tag="div" class="flex flex-col gap-4 relative">
         <div v-for="c in commentRows" :key="c.id" class="flex gap-3">
           <Avatar :name="crew.nameOf(c.user_id)" :color="crew.colorOf(c.user_id)" :size="32" />
-          <div class="min-w-0 flex-1"><strong class="text-sm">{{ crew.nameOf(c.user_id) }}</strong> <span class="faint text-xs">{{ ago(c.created_at) }}</span><p v-if="c.body && !(c.media_path && c.body === '📷')" class="m-0 mt-1">{{ c.body }}</p><img v-if="c.media_path && commentUrls[c.media_path]" :src="commentUrls[c.media_path]" alt="" class="comment-photo" loading="lazy"></div>
+          <div class="min-w-0 flex-1"><strong class="text-sm">{{ crew.nameOf(c.user_id) }}</strong> <span class="faint text-xs">{{ ago(c.created_at) }}</span><p v-if="c.body && !(c.media_path && c.body === '📷')" class="m-0 mt-1"><MentionText :text="c.body" /></p><img v-if="c.media_path && commentUrls[c.media_path]" :src="commentUrls[c.media_path]" alt="" class="comment-photo" loading="lazy"></div>
         </div>
       </TransitionGroup>
       <p v-if="!commentRows.length" class="muted text-center">Ainda ninguém comentou.</p>
       <div v-if="commentPhotoPreview" class="comment-attach"><img :src="commentPhotoPreview" alt=""><button class="icon-btn" aria-label="Remover foto" @click="clearCommentPhoto"><X :size="15" /></button></div>
+      <MentionSuggest v-model="commentText" class="mt-4" />
       <form class="flex gap-2 mt-5" @submit.prevent="addComment">
         <input ref="commentInput" type="file" accept="image/*" class="hidden" @change="pickCommentPhoto">
         <button type="button" class="icon-btn self-center" aria-label="Juntar foto" @click="commentInput?.click()"><ImagePlus :size="18" /></button>

@@ -83,7 +83,7 @@ function share() {
     </header>
 
     <span v-if="post.game_title" class="tag fill-sky mt-3"><Gamepad2 :size="12" /> {{ post.game_title }}</span>
-    <p v-if="post.body && post.body !== 'Shared a moment.'" class="post-body" :class="{ 'poll-q display': poll }">{{ post.body }}</p>
+    <p v-if="post.body && post.body !== 'Shared a moment.'" class="post-body" :class="{ 'poll-q display': poll }"><MentionText :text="post.body" /></p>
 
     <div v-if="poll" class="poll">
       <button v-for="(opt, i) in poll.options" :key="i" class="poll-opt" :class="{ mine: myVote === i, lead: leader === i && myVote !== null }" @click="vote(i)">

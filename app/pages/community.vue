@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UserPlus, Share2, Copy, Check, MessageSquare, ChevronDown, Crown } from 'lucide-vue-next'
+import { UserPlus, Share2, Copy, Check, MessageSquare, ChevronDown, Crown, Settings2, Send } from 'lucide-vue-next'
 definePageMeta({ middleware: 'auth' })
 
 const supabase = useSupabaseClient()
@@ -54,6 +54,27 @@ async function load() {
   }
 }
 
+// owner: edit name, features and filter
+const showEdit = ref(false)
+const editDraft = ref<CommunityDraft>({ name: '', features: { ...DEFAULT_FEATURES }, filter: false })
+const savingEdit = ref(false)
+function openEdit() {
+  const g = crew.group.value
+  if (!g) return
+  editDraft.value = { name: g.name, features: { ...crew.features.value }, filter: !!g.filter_messages }
+  showEdit.value = true
+}
+async function saveEdit(e?: Event) {
+  const d = editDraft.value
+  savingEdit.value = true
+  const { error } = await supabase.rpc('update_group', { p_group: community.value, p_name: d.name.trim(), p_features: d.features, p_filter: d.filter })
+  savingEdit.value = false
+  if (error) return toast.error(error.message)
+  crew.groups.value = crew.groups.value.map(g => g.id === community.value ? { ...g, name: d.name.trim(), features: { ...d.features }, filter_messages: d.filter } : g)
+  showEdit.value = false
+  toast.ok('Comunidade atualizada')
+}
+
 async function makeInvite() {
   const { data, error } = await supabase.rpc('create_group_invite', { p_group: community.value })
   if (error) return toast.error(error.message)
@@ -79,7 +100,15 @@ onMounted(load)
     <header class="pt-2">
       <p class="kicker">A malta · {{ crew.members.value.length }}</p>
       <h1 class="display h-xl crew-name">{{ crew.group.value?.name }}<span class="t-lime">.</span></h1>
+      <div v-if="crew.isOwner.value" class="flex flex-wrap gap-2 mt-3">
+        <button class="btn btn-sm btn-ghost" @click="openEdit"><Settings2 :size="15" /> Editar comunidade</button>
+        <span v-if="crew.group.value?.filter_messages" class="chip">🛡️ Filtro ligado</span>
+      </div>
     </header>
+
+    <Sheet :open="showEdit" kicker="Comunidade" title="Editar" @close="showEdit = false">
+      <CommunityForm v-model="editDraft" submit-label="Guardar" :busy="savingEdit" @submit="saveEdit" />
+    </Sheet>
 
     <!-- invite -->
     <section v-if="crew.isOwner.value" class="invite sticker fill-lime">
@@ -110,6 +139,7 @@ onMounted(load)
             <span v-for="b in badges[m.user_id] || []" :key="b.label" class="tag badge" :class="`fill-${b.color}`">{{ b.label }}</span>
           </div>
         </div>
+        <NuxtLink v-if="m.user_id !== me?.id" :to="`/messages/${m.user_id}`" class="icon-btn msg-btn" :aria-label="`Mensagem para ${m.name}`"><Send :size="16" /></NuxtLink>
         <div class="stat-col">
           <span><b class="num">{{ stats[m.user_id]?.posts || 0 }}</b> posts</span>
           <span><b class="num">{{ stats[m.user_id]?.plans || 0 }}</b> planos</span>
@@ -146,6 +176,7 @@ onMounted(load)
 .member { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1.5px solid var(--line); }
 .badge { border: 1.5px solid #000; transform: rotate(-2deg); }
 .badge:nth-child(even) { transform: rotate(2deg); }
+.msg-btn { flex: none; }
 .stat-col { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .stat-col b { color: var(--paper); font-size: 15px; }
 .discord-toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; background: none; border: 0; }

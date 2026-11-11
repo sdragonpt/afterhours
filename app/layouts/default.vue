@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Flame, CalendarHeart, Gamepad2, Wallet, Plus, Users, ChevronDown, Check, PenLine, BarChart3, Clapperboard, Swords, Receipt, PartyPopper } from 'lucide-vue-next'
+import { Flame, CalendarHeart, Gamepad2, Wallet, Plus, Users, ChevronDown, Check, PenLine, BarChart3, Clapperboard, Swords, Receipt, PartyPopper, Send } from 'lucide-vue-next'
 
 const supabase = useSupabaseClient()
 const me = useMe()
@@ -12,25 +12,40 @@ const { toasts } = toast
 const ready = ref(false)
 const showSwitcher = ref(false)
 const showAdd = ref(false)
-const newName = ref('')
+const showCreate = ref(false)
+const draft = ref<CommunityDraft>({ name: '', features: { ...DEFAULT_FEATURES }, filter: false })
 const creating = ref(false)
 
-const tabs = [
-  { to: '/', label: 'Hoje', icon: Flame },
-  { to: '/plans', label: 'Planos', icon: CalendarHeart },
-  { to: '/gaming', label: 'Gaming', icon: Gamepad2 },
-  { to: '/tab', label: 'Tab', icon: Wallet },
+const allTabs = [
+  { to: '/', label: 'Hoje', icon: Flame, feature: undefined },
+  { to: '/plans', label: 'Planos', icon: CalendarHeart, feature: 'plans' as const },
+  { to: '/gaming', label: 'Gaming', icon: Gamepad2, feature: 'gaming' as const },
+  { to: '/tab', label: 'Tab', icon: Wallet, feature: 'tab' as const },
 ]
+// only the parts this community uses (Hoje is always there)
+const tabs = computed(() => allTabs.filter(t => t.feature === undefined || crew.features.value[t.feature]))
+const half = computed(() => Math.ceil(tabs.value.length / 2))
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path.startsWith(to))
 
-const quickActions = [
+const allQuickActions = [
   { label: 'Post', hint: 'Foto, texto, momento', icon: PenLine, color: 'paper', to: '/?new=post' },
   { label: 'Sondagem', hint: 'Decidam em 10 seg', icon: BarChart3, color: 'pink', to: '/?new=poll' },
-  { label: 'Plano', hint: 'Jantar, saída, viagem', icon: PartyPopper, color: 'coral', to: '/plans?new=1' },
-  { label: 'Quem joga?', hint: 'Abre um lobby', icon: Swords, color: 'sky', to: '/gaming?new=lobby' },
+  { label: 'Plano', hint: 'Jantar, saída, viagem', icon: PartyPopper, color: 'coral', to: '/plans?new=1', feature: 'plans' },
+  { label: 'Quem joga?', hint: 'Abre um lobby', icon: Swords, color: 'sky', to: '/gaming?new=lobby', feature: 'gaming' },
   { label: 'Clip', hint: 'A jogada do ano', icon: Clapperboard, color: 'sun', to: '/?new=clip' },
-  { label: 'Despesa', hint: 'Quem pagou o quê', icon: Receipt, color: 'lime', to: '/tab?new=1' },
+  { label: 'Despesa', hint: 'Quem pagou o quê', icon: Receipt, color: 'lime', to: '/tab?new=1', feature: 'tab' },
 ]
+
+const quickActions = computed(() => allQuickActions.filter((a: any) => !a.feature || crew.features.value[a.feature as keyof Features]))
+
+// a page turned off for this community (old link, owner just changed it) → back to Hoje
+const FEATURE_OF: Record<string, keyof Features> = { '/plans': 'plans', '/gaming': 'gaming', '/tab': 'tab' }
+watch([() => route.path, () => crew.features.value, ready], () => {
+  const f = FEATURE_OF[route.path]
+  if (ready.value && f && crew.group.value && !crew.features.value[f]) navigateTo('/', { replace: true })
+})
+
+const dms = useDMs()
 
 async function boot() {
   if (!me.value) return
@@ -55,16 +70,18 @@ async function switchTo(id: string) {
   prefetchAll()
 }
 async function createCommunity() {
-  if (!newName.value.trim()) return
+  const d = draft.value
+  if (!d.name.trim()) return
   creating.value = true
-  const { data, error } = await supabase.rpc('create_group', { p_name: newName.value.trim() })
+  const { data, error } = await supabase.rpc('create_group', { p_name: d.name.trim(), p_features: d.features, p_filter: d.filter })
   creating.value = false
   if (error) return toast.error(error.message)
   // close + switch immediately; sync the rest in the background
-  const name = newName.value.trim()
-  newName.value = ''
+  const name = d.name.trim()
+  draft.value = { name: '', features: { ...DEFAULT_FEATURES }, filter: false }
   showSwitcher.value = false
-  crew.groups.value = [...crew.groups.value, { id: data as string, name, owner_id: me.value!.id }]
+  showCreate.value = false
+  crew.groups.value = [...crew.groups.value, { id: data as string, name, owner_id: me.value!.id, features: d.features, filter_messages: d.filter }]
   community.value = data as string
   toast.ok('Comunidade criada. Agora convida a malta!')
   navigateTo('/community')
@@ -93,6 +110,7 @@ onMounted(boot)
       <NuxtLink v-else to="/" class="wordmark display">afterhours<span class="t-lime">.</span></NuxtLink>
       <div class="flex items-center gap-2">
         <NuxtLink to="/community" class="icon-btn" aria-label="Malta" :class="{ 'is-on': route.path === '/community' }"><Users :size="18" /></NuxtLink>
+        <NuxtLink to="/messages" class="icon-btn dm-btn" :aria-label="dms.unread.value ? `Mensagens, ${dms.unread.value} por ler` : 'Mensagens'" :class="{ 'is-on': route.path.startsWith('/messages') }"><Send :size="17" /><Transition name="fade"><span v-if="dms.unread.value" class="dm-badge">{{ dms.unread.value > 9 ? '9+' : dms.unread.value }}</span></Transition></NuxtLink>
         <NuxtLink to="/profile" aria-label="Perfil">
           <Avatar :name="crew.meMember.value?.name || me?.email || '?'" :color="crew.meMember.value?.color" :vibe="crew.meMember.value?.vibe" :size="40" />
         </NuxtLink>
@@ -103,6 +121,7 @@ onMounted(boot)
       <NuxtLink to="/" class="wordmark display">afterhours<span class="t-lime">.</span></NuxtLink>
       <NuxtLink v-for="t in tabs" :key="t.to" :to="t.to" class="rail-link" :class="{ on: isActive(t.to) }"><component :is="t.icon" :size="20" /> {{ t.label }}</NuxtLink>
       <NuxtLink to="/community" class="rail-link" :class="{ on: route.path === '/community' }"><Users :size="20" /> Malta</NuxtLink>
+      <NuxtLink to="/messages" class="rail-link" :class="{ on: route.path.startsWith('/messages') }"><Send :size="20" /> Mensagens <span v-if="dms.unread.value" class="rail-badge">{{ dms.unread.value }}</span></NuxtLink>
       <button class="btn btn-primary mt-4" @click="showAdd = true"><Plus :size="18" /> Criar</button>
     </nav>
 
@@ -113,20 +132,17 @@ onMounted(boot)
         <p class="kicker">Bem-vindo</p>
         <h1 class="display h-xl">Ainda não tens<br>malta aqui<span class="t-lime">.</span></h1>
         <p class="muted">Cria a comunidade do teu grupo ou abre o link de convite que te mandaram no WhatsApp.</p>
-        <form class="flex flex-col gap-3 mt-2" @submit.prevent="createCommunity">
-          <input v-model="newName" class="field" maxlength="60" placeholder="Nome do grupo (ex.: Os do costume)" required>
-          <button class="btn btn-primary btn-block" :disabled="creating">{{ creating ? 'A criar…' : 'Criar comunidade' }}</button>
-        </form>
+        <CommunityForm v-model="draft" class="mt-2" submit-label="Criar comunidade" :busy="creating" @submit="createCommunity" />
         <NuxtLink to="/join" class="btn btn-ghost btn-block">Tenho um código de convite</NuxtLink>
       </section>
 
       <slot v-else />
     </main>
 
-    <nav v-if="crew.groups.value.length" class="tabbar" aria-label="Navegação">
-      <NuxtLink v-for="t in tabs.slice(0, 2)" :key="t.to" :to="t.to" class="tab" :class="{ on: isActive(t.to) }"><component :is="t.icon" :size="22" :stroke-width="isActive(t.to) ? 2.4 : 1.8" /><span>{{ t.label }}</span></NuxtLink>
+    <nav v-if="crew.groups.value.length" class="tabbar" aria-label="Navegação" :style="{ gridTemplateColumns: `repeat(${tabs.length + 1}, 1fr)`, maxWidth: `${Math.max(240, (tabs.length + 1) * 104)}px` }">
+      <NuxtLink v-for="t in tabs.slice(0, half)" :key="t.to" :to="t.to" class="tab" :class="{ on: isActive(t.to) }"><component :is="t.icon" :size="22" :stroke-width="isActive(t.to) ? 2.4 : 1.8" /><span>{{ t.label }}</span></NuxtLink>
       <button class="fab" aria-label="Criar" @click="showAdd = true"><Plus :size="28" :stroke-width="2.6" /></button>
-      <NuxtLink v-for="t in tabs.slice(2)" :key="t.to" :to="t.to" class="tab" :class="{ on: isActive(t.to) }"><component :is="t.icon" :size="22" :stroke-width="isActive(t.to) ? 2.4 : 1.8" /><span>{{ t.label }}</span></NuxtLink>
+      <NuxtLink v-for="t in tabs.slice(half)" :key="t.to" :to="t.to" class="tab" :class="{ on: isActive(t.to) }"><component :is="t.icon" :size="22" :stroke-width="isActive(t.to) ? 2.4 : 1.8" /><span>{{ t.label }}</span></NuxtLink>
     </nav>
 
     <Sheet :open="showAdd" kicker="O que se passa?" title="Criar" @close="showAdd = false">
@@ -147,13 +163,14 @@ onMounted(boot)
           <Check v-if="g.id === community" :size="18" class="t-lime" />
         </button>
       </div>
-      <form class="flex gap-2 mt-5" @submit.prevent="createCommunity">
-        <input v-model="newName" class="field" maxlength="60" placeholder="Nova comunidade…">
-        <button class="btn btn-primary" :disabled="creating || !newName.trim()">Criar</button>
-      </form>
+      <button class="btn btn-ghost btn-block mt-5" @click="showSwitcher = false; showCreate = true"><Plus :size="17" /> Nova comunidade</button>
     </Sheet>
 
-    <NotifyBar v-if="ready && crew.groups.value.length" />
+    <Sheet :open="showCreate" kicker="Comunidades" title="Nova comunidade" @close="showCreate = false">
+      <CommunityForm v-model="draft" submit-label="Criar comunidade" :busy="creating" @submit="createCommunity" />
+    </Sheet>
+
+    <NotifyBar v-if="ready && crew.groups.value.length && !route.path.startsWith('/messages/')" />
 
     <div class="toast-wrap">
       <TransitionGroup name="toast" tag="div" class="flex flex-col items-center gap-2">
@@ -170,6 +187,9 @@ onMounted(boot)
 .crew-pill:active { transform: scale(.97); }
 .crew-glyph { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border: 2px solid #000; border-radius: 999px; font-family: var(--font-display); font-weight: 800; }
 .wordmark { font-size: 26px; }
+.dm-btn { position: relative; }
+.dm-badge { position: absolute; top: -4px; right: -4px; display: grid; place-items: center; min-width: 19px; height: 19px; padding: 0 4px; border: 2px solid var(--ink); border-radius: 99px; background: var(--coral); color: #000; font-size: 10px; font-weight: 800; }
+.rail-badge { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 99px; background: var(--coral); color: #000; font-size: 12px; font-weight: 800; text-align: center; }
 .icon-btn.is-on { background: var(--paper); color: var(--on-color); border-color: var(--paper); }
 .main { width: 100%; max-width: 640px; margin: 0 auto; padding: 6px 16px calc(100px + max(10px, env(safe-area-inset-bottom) - 14px)); }
 

@@ -10,8 +10,10 @@ const name = ref('')
 const color = ref('lime')
 const saving = ref(false)
 
+// fill the form once; never refill while the user is typing (clearing the field used to bring the old name back)
+const filled = ref(false)
 watchEffect(() => {
-  if (crew.meMember.value && !name.value) { name.value = crew.meMember.value.name; color.value = crew.meMember.value.color }
+  if (!filled.value && crew.meMember.value) { name.value = crew.meMember.value.name; color.value = crew.meMember.value.color; filled.value = true }
 })
 
 async function save(e: MouseEvent) {

@@ -38,6 +38,27 @@ function go(delta: number) {
   dir.value = delta > 0 ? 'next' : 'prev'
   month.value = new Date(month.value.getFullYear(), month.value.getMonth() + delta, 1)
 }
+// swipe left/right to change month (the grid follows the finger a little)
+const drag = ref(0)
+let sx = 0, sy = 0, tracking = false, horizontal: boolean | null = null
+function onStart(e: TouchEvent) { const t = e.touches[0]!; sx = t.clientX; sy = t.clientY; tracking = true; horizontal = null; drag.value = 0 }
+function onMove(e: TouchEvent) {
+  if (!tracking) return
+  const t = e.touches[0]!, dx = t.clientX - sx, dy = t.clientY - sy
+  if (horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) horizontal = Math.abs(dx) > Math.abs(dy) * 1.3
+  if (!horizontal) return
+  const blocked = dx > 0 && props.disablePast && isCurrentMonth.value
+  drag.value = blocked ? dx * 0.15 : dx * 0.5
+}
+function onEnd(e: TouchEvent) {
+  if (!tracking) return
+  tracking = false
+  const dx = (e.changedTouches[0]?.clientX ?? sx) - sx
+  drag.value = 0
+  if (!horizontal || Math.abs(dx) < 50) return
+  if (dx > 0 && props.disablePast && isCurrentMonth.value) return
+  go(dx < 0 ? 1 : -1)
+}
 function choose(c: { key: string; past: boolean }) {
   if (props.disablePast && c.past) return
   emit('update:modelValue', c.key); emit('pick', c.key)
@@ -45,7 +66,7 @@ function choose(c: { key: string; past: boolean }) {
 </script>
 
 <template>
-  <div class="cal">
+  <div class="cal" @touchstart.passive="onStart" @touchmove.passive="onMove" @touchend="onEnd" @touchcancel="onEnd">
     <header class="cal-head">
       <button type="button" class="nav" aria-label="Mês anterior" :disabled="disablePast && isCurrentMonth" @click="go(-1)"><ChevronLeft :size="18" /></button>
       <Transition :name="`month-${dir}`" mode="out-in"><strong :key="title" class="display">{{ title }}</strong></Transition>
@@ -53,7 +74,7 @@ function choose(c: { key: string; past: boolean }) {
     </header>
     <div class="wd"><span v-for="(w, i) in ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']" :key="i">{{ w }}</span></div>
     <Transition :name="`month-${dir}`" mode="out-in">
-      <div :key="title" class="grid" role="grid">
+      <div :key="title" class="grid" role="grid" :class="{ dragging: drag }" :style="drag ? { transform: `translateX(${drag}px)`, opacity: 1 - Math.min(Math.abs(drag) / 300, .4) } : undefined">
         <template v-for="(c, i) in cells" :key="i">
           <span v-if="!c" />
           <button
@@ -71,7 +92,7 @@ function choose(c: { key: string; past: boolean }) {
 </template>
 
 <style scoped>
-.cal { padding: 14px; border: 1.5px solid var(--line); border-radius: var(--r-lg); background: var(--ink-2); }
+.cal { touch-action: pan-y; padding: 14px; border: 1.5px solid var(--line); border-radius: var(--r-lg); background: var(--ink-2); }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .cal-head strong { font-size: 22px; }
 .nav { display: grid; place-items: center; width: 36px; height: 36px; border: 1.5px solid var(--line-strong); border-radius: 999px; background: var(--ink); color: var(--paper); transition: transform var(--fast) var(--ease-out); }
@@ -94,6 +115,7 @@ function choose(c: { key: string; past: boolean }) {
 .d.on .n { color: var(--on-color); }
 .dots { position: absolute; bottom: 5px; display: flex; gap: 2px; }
 .dots i { width: 6px; height: 6px; border: 1px solid #000; border-radius: 50%; }
+.grid:not(.dragging) { transition: transform 200ms var(--ease-out), opacity 200ms; }
 .month-next-enter-active, .month-next-leave-active, .month-prev-enter-active, .month-prev-leave-active { transition: opacity 140ms ease-out, transform 160ms var(--ease-out); }
 .month-next-enter-from { opacity: 0; transform: translateX(14px); }
 .month-next-leave-to { opacity: 0; transform: translateX(-14px); }
