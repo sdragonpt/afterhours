@@ -82,6 +82,7 @@ onMounted(boot)
 
 <template>
   <div class="shell">
+    <Transition name="splash"><AppSplash v-if="!ready" /></Transition>
     <PullToRefresh v-if="ready && crew.groups.value.length" :on-refresh="pullRefresh" />
     <header class="topbar">
       <button v-if="crew.groups.value.length" class="crew-pill" @click="showSwitcher = true">
@@ -106,11 +107,7 @@ onMounted(boot)
     </nav>
 
     <main class="main">
-      <div v-if="!ready" class="flex flex-col gap-3 pt-6">
-        <div class="skeleton" style="height:46px;width:60%" />
-        <div class="skeleton" style="height:180px" />
-        <div class="skeleton" style="height:120px" />
-      </div>
+      <div v-if="!ready" />
 
       <section v-else-if="!crew.groups.value.length" class="onboard stagger">
         <p class="kicker">Bem-vindo</p>

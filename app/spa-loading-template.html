@@ -1,0 +1,33 @@
+<style>
+  html, body { background: #0c0c0e; margin: 0; }
+  .ah-splash { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+    padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom); background: #0c0c0e; color: #f4f1ea;
+    font-family: 'Bricolage Grotesque Variable', ui-rounded, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .ah-splash-logo { width: 96px; height: 96px; border: 3px solid #000; border-radius: 26px; box-shadow: 5px 5px 0 #000; transform: rotate(-6deg);
+    animation: ah-pop 520ms cubic-bezier(.34, 1.56, .64, 1) both, ah-bob 2.4s 520ms ease-in-out infinite; }
+  .ah-splash-word { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.04em; animation: ah-fade 400ms 180ms ease-out both; }
+  .ah-splash-word span { color: #d4ff3a; }
+  .ah-splash-bar { position: relative; width: 132px; height: 6px; overflow: hidden; border-radius: 99px; background: #1c1c21; animation: ah-fade 400ms 260ms ease-out both; }
+  .ah-splash-bar::after { content: ''; position: absolute; inset: 0; width: 40%; border-radius: 99px; background: #d4ff3a; animation: ah-slide 1.1s cubic-bezier(.65, 0, .35, 1) infinite; }
+  .ah-splash-line { margin: 0; min-height: 18px; color: #8f8d96; font-size: 14px; font-weight: 600; animation: ah-fade 400ms 340ms ease-out both; }
+  @keyframes ah-pop { from { transform: scale(.4) rotate(-30deg); opacity: 0; } }
+  @keyframes ah-bob { 50% { transform: translateY(-6px) rotate(-2deg); } }
+  @keyframes ah-fade { from { opacity: 0; transform: translateY(6px); } }
+  @keyframes ah-slide { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+  @media (prefers-reduced-motion: reduce) { .ah-splash *, .ah-splash *::after { animation: none !important; } }
+</style>
+<div class="ah-splash" role="status" aria-live="polite">
+  <img class="ah-splash-logo" src="/icon-192.png" alt="" width="96" height="96">
+  <p class="ah-splash-word">afterhours<span>.</span></p>
+  <div class="ah-splash-bar"></div>
+  <p class="ah-splash-line" id="ah-splash-line">A carregar…</p>
+</div>
+<script>
+  (function () {
+    var lines = ['A chamar a malta…', 'A aquecer o lobby…', 'A contar quem deve a quem…', 'A escolher o bar…', 'A acordar o grupo…', 'A carregar os clips…'];
+    var line = lines[Math.floor(Math.random() * lines.length)];
+    window.__ahSplashLine = line;
+    var el = document.getElementById('ah-splash-line');
+    if (el) el.textContent = line;
+  })();
+</script>

@@ -12,6 +12,7 @@ export default defineNuxtConfig({
   // Private, logged-in app: render in the browser and serve static files from the CDN edge.
   // No server round-trip (Netlify functions run in the US) and no login-page flash on reload.
   ssr: false,
+  spaLoadingTemplate: 'spa-loading-template.html',
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
   // fonts are bundled with the app (no request to Google → no IP sent to third parties)
   css: ['@fontsource-variable/bricolage-grotesque/standard.css', '@fontsource-variable/dm-sans/standard.css', '~/assets/css/main.css'],
